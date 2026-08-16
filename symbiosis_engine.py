@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
+import math
 import random
+import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -134,6 +136,130 @@ def scenario_for(world_id: str, event_index: int) -> dict[str, Any]:
         "asterion": "AST-Risk-3.7",
     }[world_id]
     return event
+
+
+def _bounded(value: float, minimum: int = 0, maximum: int = 100) -> int:
+    """Round a synthetic score into a stable, display-safe range."""
+
+    return max(minimum, min(maximum, int(round(value))))
+
+
+def _display_value_to_dollars(value: str) -> float:
+    """Read the fictional value-at-stake label for scenario projection only."""
+
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*([KMB]?)", value.replace(",", ""), re.IGNORECASE)
+    if not match:
+        return 1_000_000.0
+    amount = float(match.group(1))
+    multiplier = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}.get(match.group(2).upper(), 1)
+    return amount * multiplier
+
+
+def decision_telemetry(
+    event: dict[str, Any],
+    regions: list[dict[str, Any]],
+    now: datetime | None = None,
+    points: int = 48,
+) -> dict[str, Any]:
+    """Derive one formal signal trace and scenario range from the event state.
+
+    This is the authoritative bridge between the original formal Symbiosis
+    board (Trust / Risk / Friction / projection) and the mobile decision
+    cockpit. Values are deterministic synthetic simulation data; regional
+    time and the supplied clock are factual application state.
+    """
+
+    now = now or utc_now()
+    evidence = event["evidence"]
+    verified = sum(item["state"] == "verified" for item in evidence)
+    conflicting = sum(item["state"] == "conflicting" for item in evidence)
+    missing = sum(item["state"] == "missing" for item in evidence)
+    risk_base = {"low": 28, "moderate": 48, "elevated": 67, "critical": 86}.get(event["risk"].lower(), 50)
+    operating_load = round(sum(int(region["network_load"]) for region in regions) / max(1, len(regions)))
+
+    trust = _bounded(int(event["confidence"]) + (verified * 3) - (conflicting * 4) - (missing * 6), 8, 96)
+    risk = _bounded(risk_base + (conflicting * 3) + (missing * 4) - (verified * 2), 8, 96)
+    friction = _bounded(20 + (conflicting * 11) + (missing * 17) + max(0, 70 - int(event["confidence"])) * .22, 8, 94)
+    latency_ms = int(86 + (friction * 1.7) + (risk * .85) + (operating_load * .35))
+
+    metrics = {
+        "trust": trust,
+        "risk": risk,
+        "friction": friction,
+        "latency_ms": latency_ms,
+        "operating_load": operating_load,
+        "verified": verified,
+        "conflicting": conflicting,
+        "missing": missing,
+    }
+
+    # The trace is stable for a decision, then makes a small deterministic
+    # minute-level adjustment. That produces live-looking movement without
+    # inventing a second, view-only source of truth.
+    phase = deterministic_int(f"{event['id']}:phase", 0, 20) + now.minute
+    trace: list[dict[str, int]] = []
+    trace_points = max(16, points)
+    for index in range(trace_points):
+        progress = index / max(1, trace_points - 1)
+        wave = math.sin((index + phase) * .47) * 7 + math.cos((index + phase) * .18) * 4
+        trust_noise = deterministic_int(f"{event['id']}:trace:trust:{index}", -6, 6)
+        risk_noise = deterministic_int(f"{event['id']}:trace:risk:{index}", -7, 7)
+        friction_noise = deterministic_int(f"{event['id']}:trace:friction:{index}", -6, 6)
+        load_noise = deterministic_int(f"{event['id']}:trace:load:{index}", -10, 10)
+        # Older points sit a little farther from the current score; the last
+        # point resolves exactly to the current metric for clear inspection.
+        trust_point = _bounded(trust + wave + trust_noise - ((1 - progress) * 5))
+        risk_point = _bounded(risk - (wave * .72) + risk_noise + ((1 - progress) * 3))
+        friction_point = _bounded(friction + (wave * .55) + friction_noise)
+        load_point = _bounded(operating_load + (wave * .85) + load_noise)
+        trace.append(
+            {
+                "trust": trust if index == trace_points - 1 else trust_point,
+                "risk": risk if index == trace_points - 1 else risk_point,
+                "friction": friction if index == trace_points - 1 else friction_point,
+                "load": operating_load if index == trace_points - 1 else load_point,
+            }
+        )
+
+    # A repeatable fat-tailed synthetic scenario range. This follows the
+    # original board-risk idea while making its dependencies explicit here.
+    base_value = _display_value_to_dollars(str(event["value"]))
+    base_exposure = base_value * ((risk / 100) * .19 + (friction / 100) * .11)
+    seed = int(hashlib.sha256(f"{event['id']}:projection".encode("utf-8")).hexdigest()[:16], 16)
+    rng = random.Random(seed)
+    samples: list[float] = []
+    for _ in range(360):
+        multiplier = math.exp(rng.gauss(0.0, .42 + (risk / 700)))
+        shock = 1.0 + (max(0.0, rng.gauss(.14, .11)) if risk >= 62 else 0.0)
+        samples.append(base_exposure * multiplier * shock)
+    samples.sort()
+
+    def percentile(percent: int) -> float:
+        index = int(round((percent / 100) * (len(samples) - 1)))
+        return samples[max(0, min(len(samples) - 1, index))]
+
+    low, high = samples[0], samples[-1]
+    bucket_count = 18
+    step = max(1.0, (high - low) / bucket_count)
+    histogram = [0] * bucket_count
+    for sample in samples:
+        bucket = max(0, min(bucket_count - 1, int((sample - low) / step)))
+        histogram[bucket] += 1
+
+    return {
+        "metrics": metrics,
+        "trace": trace,
+        "projection": {
+            "base_exposure": base_exposure,
+            "p50": percentile(50),
+            "p90": percentile(90),
+            "p99": percentile(99),
+            "histogram": histogram,
+            "minimum": low,
+            "maximum": high,
+        },
+        "time_basis": now.strftime("%Y-%m-%d %H:%M UTC"),
+    }
 
 
 def outcome_for(event: dict[str, Any], action: str) -> dict[str, str]:

@@ -23,6 +23,7 @@ import streamlit.components.v1 as components
 from symbiosis_engine import (
     active_region_label,
     audit_entry,
+    decision_telemetry,
     public_snapshot,
     regional_state,
     scenario_for,
@@ -170,9 +171,9 @@ def render_brand(profile: dict[str, Any]) -> None:
   </div>
 </div>
 <p class="sym-subtitle">
-  The decision cockpit for consequential institutional events. See evidence,
-  uncertainty, consequence, and the strongest next action—before an accountable
-  human authorizes it.
+  The formal decision system for consequential institutional events—now a
+  mobile-first cockpit. See evidence, uncertainty, consequence, and the
+  strongest next action before an accountable human authorizes it.
 </p>
 <div class="sym-disclosure">
   Live operating simulation · Synthetic institutions, people, events, assets, and outcomes ·
@@ -213,6 +214,7 @@ def render_live_simulation_canvas(
     event: dict[str, Any],
     profile: dict[str, Any],
     regions: list[dict[str, Any]],
+    telemetry: dict[str, Any],
     private_mode: bool,
 ) -> None:
     """Render the three live visual systems with mobile tap-to-inspect controls.
@@ -240,6 +242,8 @@ def render_live_simulation_canvas(
             "action": event["recommendation"],
             "reviews": profile["review_cases"],
         },
+        "metrics": telemetry["metrics"],
+        "trace": telemetry["trace"],
         "focus": focus["code"],
         "regions": [
             {
@@ -300,6 +304,17 @@ def render_live_simulation_canvas(
   .ambient.c { stroke:rgba(18,184,134,.18); stroke-width:.95; animation-duration:17s; animation-delay:-4s; }
   .route-base { fill:none; stroke:rgba(47,128,237,.2); stroke-width:1.25; }
   .route-live { fill:none; stroke:url(#streamGradient); stroke-width:2.35; stroke-linecap:round; stroke-dasharray:9 10; animation: route-flow 5.8s linear infinite; filter:drop-shadow(0 1px 2px rgba(0,210,255,.24)); }
+  .signal-area { fill:url(#loadGradient); opacity:.36; }
+  .signal-line { fill:none; stroke-width:2.1; stroke-linecap:round; stroke-linejoin:round; animation: signal-breathe 2.7s ease-in-out infinite; }
+  .signal-line.trust { stroke:#12a575; }
+  .signal-line.risk { stroke:#d75d68; animation-delay:-.9s; }
+  .signal-line.friction { stroke:#2f80ed; animation-delay:-1.6s; }
+  .signal-dot { animation: signal-dot-pulse 2.25s ease-in-out infinite; }
+  .signal-dot.trust { fill:#12a575; } .signal-dot.risk { fill:#d75d68; animation-delay:-.7s; } .signal-dot.friction { fill:#2f80ed; animation-delay:-1.3s; }
+  .chart-axis { fill:#7b93a5; font-size:8px; font-weight:760; letter-spacing:.04em; }
+  .signal-legend { position:absolute; z-index:6; top:9px; left:10px; display:flex; gap:4px; }
+  .signal-legend span { display:inline-flex; align-items:center; gap:3px; padding:4px 5px; border:1px solid rgba(47,128,237,.13); border-radius:7px; background:rgba(255,255,255,.78); color:#4d6d86; box-shadow:0 4px 12px rgba(51,91,128,.06); font-size:7px; font-weight:830; letter-spacing:.055em; }
+  .signal-legend b { color:#153854; font-size:8px; } .signal-legend .trust b { color:#118466; } .signal-legend .risk b { color:#c74f5c; } .signal-legend .friction b { color:#276fd2; }
   .orbit { position:absolute; z-index:2; left:50%; top:50%; border:1px dashed rgba(0,210,255,.35); border-radius:50%; transform:translate(-50%,-50%); }
   .orbit.one { width:167px; height:167px; animation: orbit-cw 11s linear infinite; }
   .orbit.two { width:205px; height:205px; border-color:rgba(47,128,237,.21); animation: orbit-ccw 17s linear infinite; }
@@ -313,7 +328,8 @@ def render_live_simulation_canvas(
   .fast .orbit.one, .network-fast .orbit.one { animation-duration:7s; } .fast .orbit.two, .network-fast .orbit.two { animation-duration:11s; }
   .network-fast .ambient { animation-duration:8s; }
   .network-fast .route-live { animation-duration:3.9s; }
-  .still .ambient { animation-duration:36s; opacity:.3; } .still .route-live { animation-duration:18s; opacity:.38; } .still .orbit { opacity:.44; animation-duration:24s; }
+  .network-fast .signal-line { animation-duration:1.65s; } .network-fast .signal-dot { animation-duration:1.3s; }
+  .still .ambient { animation-duration:36s; opacity:.3; } .still .route-live { animation-duration:18s; opacity:.38; } .still .orbit { opacity:.44; animation-duration:24s; } .still .signal-line { opacity:.5; animation-duration:5.8s; }
   .meter { position:absolute; z-index:4; left:50%; top:50%; width:117px; height:117px; display:grid; place-items:center; border-radius:50%; transform:translate(-50%,-50%); background:radial-gradient(circle at 38% 28%,#fff 0%,#eef9ff 48%,#deeffb 76%); box-shadow:0 0 0 1px rgba(47,128,237,.2),0 11px 27px rgba(47,128,237,.16),inset 0 0 20px rgba(0,210,255,.12); }
   .meter:before { content:""; position:absolute; inset:8px; border-radius:inherit; background:conic-gradient(#2f80ed calc(var(--confidence) * 1%), rgba(47,128,237,.12) 0); -webkit-mask:radial-gradient(transparent 59%, #000 60%); mask:radial-gradient(transparent 59%, #000 60%); transform:rotate(-90deg); animation: meter-reveal .9s cubic-bezier(.18,.86,.24,1) both; }
   .meter-copy { position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; text-align:center; }
@@ -330,7 +346,7 @@ def render_live_simulation_canvas(
   .inspect-top span:last-child { color:#6d879b; }
   .inspector strong { display:block; margin-top:3px; color:#153854; font-size:13px; letter-spacing:-.02em; }
   .inspector p { margin:2px 0 0; color:#5b768d; font-size:10px; line-height:1.3; }
-  .paused .ambient, .paused .route-live, .paused .orbit, .paused .ticker-track, .paused .meter:before, .paused .region-node { animation-play-state:paused !important; }
+  .paused .ambient, .paused .route-live, .paused .signal-line, .paused .signal-dot, .paused .orbit, .paused .ticker-track, .paused .meter:before, .paused .region-node { animation-play-state:paused !important; }
   .sim-footer { display:flex; align-items:center; justify-content:space-between; gap:9px; min-height:35px; padding:7px 12px 9px; border-top:1px solid rgba(47,128,237,.1); color:#5f7c94; font-size:9px; font-weight:740; }
   .sim-footer b { color:#173955; font-size:10px; }
   .mood { display:inline-flex; align-items:center; gap:5px; color:#b46a18; font-size:8px; font-weight:840; letter-spacing:.09em; text-transform:uppercase; }
@@ -344,21 +360,27 @@ def render_live_simulation_canvas(
   @keyframes orbit-ccw { from { transform:translate(-50%,-50%) rotate(360deg); } to { transform:translate(-50%,-50%) rotate(0deg); } }
   @keyframes particle-burst { 0%,100% { opacity:.38; transform:scale(.7); } 45% { opacity:1; transform:scale(1.55); } 65% { opacity:.35; transform:scale(.82); } }
   @keyframes meter-reveal { from { opacity:0; transform:rotate(-90deg) scale(.82); } to { opacity:1; transform:rotate(-90deg) scale(1); } }
+  @keyframes signal-breathe { 0%,100% { opacity:.62; } 50% { opacity:1; } }
+  @keyframes signal-dot-pulse { 0%,100% { opacity:.58; r:3.1; } 50% { opacity:1; r:5.2; } }
   @media (prefers-reduced-motion:reduce) { *,*:before,*:after { animation:none !important; transition:none !important; } }
 </style>
 <main class="live-sim" id="live-sim" aria-label="Interactive live operating simulation" role="button" tabindex="0">
-  <div class="sim-top"><div class="sim-status"><i></i><span>Live operating simulation</span></div><div class="tap-label" id="tap-label">Tap to inspect</div></div>
+  <div class="sim-top"><div class="sim-status"><i></i><span>Live signals · Trust / Risk / Friction</span></div><div class="tap-label" id="tap-label">Tap to inspect</div></div>
   <div class="ticker"><div class="ticker-track"><span id="ticker-a"></span><span id="ticker-b" aria-hidden="true"></span></div></div>
   <section class="sim-stage" id="sim-stage">
     <div class="grid"></div>
     <svg class="stream-map" viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
-      <defs><linearGradient id="streamGradient" x1="0" x2="1"><stop offset="0%" stop-color="#2f80ed" stop-opacity=".15"/><stop offset="50%" stop-color="#00d2ff" stop-opacity=".98"/><stop offset="100%" stop-color="#12b886" stop-opacity=".24"/></linearGradient></defs>
-      <path class="ambient a" d="M-35,86 C72,24 117,174 218,104 S348,34 442,120 S555,184 650,84"/>
-      <path class="ambient b" d="M-30,185 C75,121 123,241 236,167 S379,102 479,190 S575,242 650,154"/>
-      <path class="ambient c" d="M-20,144 C78,192 146,66 250,144 S378,215 492,109 S573,35 650,114"/>
-      <path class="route-base" d="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46"/>
-      <path class="route-live" d="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46"/>
+      <defs>
+        <linearGradient id="loadGradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#00d2ff" stop-opacity=".42"/><stop offset="100%" stop-color="#00d2ff" stop-opacity="0"/></linearGradient>
+      </defs>
+      <text class="chart-axis" x="8" y="36">100</text><text class="chart-axis" x="12" y="132">50</text><text class="chart-axis" x="15" y="228">0</text>
+      <path class="signal-area" id="load-area"/>
+      <path class="signal-line trust" id="trust-trace"/>
+      <path class="signal-line risk" id="risk-trace"/>
+      <path class="signal-line friction" id="friction-trace"/>
+      <circle class="signal-dot trust" id="trust-dot" r="4"/><circle class="signal-dot risk" id="risk-dot" r="4"/><circle class="signal-dot friction" id="friction-dot" r="4"/>
     </svg>
+    <div class="signal-legend"><span class="trust">T <b id="trust-reading"></b></span><span class="risk">R <b id="risk-reading"></b></span><span class="friction">F <b id="friction-reading"></b></span></div>
     <div class="orbit one"><i></i><i></i><i></i></div><div class="orbit two"><i></i><i></i></div>
     <div class="meter" id="meter"><div class="meter-copy"><span>CONFIDENCE</span><strong id="confidence"></strong><small id="risk-label"></small></div></div>
     <div id="nodes"></div>
@@ -379,13 +401,42 @@ def render_live_simulation_canvas(
   const footerState = document.getElementById('footer-state');
   const moodLabel = document.getElementById('mood-label');
   const tapLabel = document.getElementById('tap-label');
+  const trustTrace = document.getElementById('trust-trace');
+  const riskTrace = document.getElementById('risk-trace');
+  const frictionTrace = document.getElementById('friction-trace');
+  const loadArea = document.getElementById('load-area');
   let selected = model.regions.find(region => region.code === model.focus) || model.regions[0];
   let paused = false;
 
   confidence.textContent = model.event.confidence + '%';
-  riskLabel.textContent = model.event.risk + ' exposure';
+  riskLabel.textContent = model.metrics.risk + ' risk';
   meter.style.setProperty('--confidence', model.event.confidence);
   root.classList.add(model.tone);
+
+  function chartPoint(value, index, total) {
+    return { x: 18 + (index / Math.max(1, total - 1)) * 566, y: 232 - (Number(value) / 100) * 190 };
+  }
+  function tracePath(key) {
+    return model.trace.map((point, index) => {
+      const spot = chartPoint(point[key], index, model.trace.length);
+      return (index ? 'L' : 'M') + spot.x.toFixed(1) + ',' + spot.y.toFixed(1);
+    }).join(' ');
+  }
+  function drawSignalBoard() {
+    const last = model.trace[model.trace.length - 1];
+    trustTrace.setAttribute('d', tracePath('trust'));
+    riskTrace.setAttribute('d', tracePath('risk'));
+    frictionTrace.setAttribute('d', tracePath('friction'));
+    const loadPath = tracePath('load');
+    loadArea.setAttribute('d', loadPath + ' L584,238 L18,238 Z');
+    [['trust', 'trust-dot'], ['risk', 'risk-dot'], ['friction', 'friction-dot']].forEach(([key, id]) => {
+      const spot = chartPoint(last[key], model.trace.length - 1, model.trace.length);
+      const dot = document.getElementById(id); dot.setAttribute('cx', spot.x); dot.setAttribute('cy', spot.y);
+    });
+    document.getElementById('trust-reading').textContent = model.metrics.trust;
+    document.getElementById('risk-reading').textContent = model.metrics.risk;
+    document.getElementById('friction-reading').textContent = model.metrics.friction;
+  }
 
   function localSession(region) {
     const parts = new Intl.DateTimeFormat('en-US', {weekday:'short', hour:'2-digit', minute:'2-digit', hourCycle:'h23', timeZone:region.zone}).formatToParts(new Date());
@@ -409,10 +460,10 @@ def render_live_simulation_canvas(
     root.classList.remove('fast', 'ambient', 'still', 'network-fast'); root.classList.add(model.continuous_network ? 'network-fast' : session.mode);
     document.querySelectorAll('.region-node').forEach(button => button.classList.toggle('active', button.dataset.code === selected.code));
     const networkState = model.continuous_network ? '24/7 SYNTHETIC NETWORK ACTIVE · ' : '';
-    const ticker = model.world + ' · ' + networkState + selected.code + ' ' + session.day.toUpperCase() + ' ' + session.time + ' · ' + session.label.toUpperCase() + ' · ' + model.event.value + ' AT STAKE · ' + model.event.confidence + '% CONFIDENCE · ' + model.event.blocker.toUpperCase() + ' CHECK · ' + model.event.reviews + ' HUMAN REVIEWS';
+    const ticker = model.world + ' · TRUST ' + model.metrics.trust + ' · RISK ' + model.metrics.risk + ' · FRICTION ' + model.metrics.friction + ' · LATENCY ' + model.metrics.latency_ms + 'MS · ' + networkState + selected.code + ' ' + session.day.toUpperCase() + ' ' + session.time + ' · ' + session.label.toUpperCase() + ' · ' + model.event.value + ' AT STAKE · ' + model.event.blocker.toUpperCase() + ' CHECK · ' + model.event.reviews + ' HUMAN REVIEWS';
     document.getElementById('ticker-a').textContent = ticker; document.getElementById('ticker-b').textContent = ticker;
     inspectTitle.textContent = selected.city + ' · ' + session.day + ' ' + session.time;
-    inspectCopy.textContent = session.label + ' · synthetic activity ' + selected.load + '% · ' + activityCopy(session);
+    inspectCopy.textContent = 'Trust ' + model.metrics.trust + ' · Risk ' + model.metrics.risk + ' · Friction ' + model.metrics.friction + ' · ' + session.label + ' · synthetic activity ' + selected.load + '% · ' + activityCopy(session);
     footerFocus.textContent = selected.code + ' · ' + session.label;
     footerState.textContent = ' · ' + model.event.value + ' at stake';
     moodLabel.textContent = model.tone === 'critical' ? 'Critical stop' : model.tone === 'attention' ? 'Human attention' : 'Verified flow';
@@ -429,6 +480,7 @@ def render_live_simulation_canvas(
   root.addEventListener('click', togglePause);
   root.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); togglePause(); } });
   window.setInterval(() => { if (!paused) paint(); }, 1000);
+  drawSignalBoard();
   paint();
 </script>
         """,
@@ -437,7 +489,7 @@ def render_live_simulation_canvas(
     )
 
 
-def render_decision_pulse(event: dict[str, Any], private_mode: bool) -> None:
+def render_decision_pulse(event: dict[str, Any], telemetry: dict[str, Any], private_mode: bool) -> None:
     """Render the compact decision reading beneath the live visual."""
 
     evidence = event["evidence"]
@@ -445,6 +497,7 @@ def render_decision_pulse(event: dict[str, Any], private_mode: bool) -> None:
     conflicting = sum(item["state"] == "conflicting" for item in evidence)
     missing = sum(item["state"] == "missing" for item in evidence)
     blocker = next((item for item in evidence if item["state"] == "missing"), evidence[-1])
+    metrics = telemetry["metrics"]
     signal = esc(_short_signal(event["signal"]))
     title = esc(private_value(event["title"], private_mode))
     value = esc(private_value(event["value"], private_mode))
@@ -472,15 +525,15 @@ def render_decision_pulse(event: dict[str, Any], private_mode: bool) -> None:
   </div>
 
   <div class="sym-glance-metrics" aria-label="Decision signal summary">
-    <div class="sym-glance-metric verified"><b>{verified}</b><span>verified</span><i></i></div>
-    <div class="sym-glance-metric conflict"><b>{conflicting}</b><span>conflict</span><i></i></div>
-    <div class="sym-glance-metric missing"><b>{missing}</b><span>blocker</span><i></i></div>
-    <div class="sym-glance-metric value"><b>{value}</b><span>at stake</span><i></i></div>
+    <div class="sym-glance-metric trust"><b>{metrics["trust"]}</b><span>trust</span><i></i></div>
+    <div class="sym-glance-metric risk"><b>{metrics["risk"]}</b><span>risk</span><i></i></div>
+    <div class="sym-glance-metric friction"><b>{metrics["friction"]}</b><span>friction</span><i></i></div>
+    <div class="sym-glance-metric evidence"><b>{verified}/{conflicting}/{missing}</b><span>evidence</span><i></i></div>
   </div>
 
   <div class="sym-blocker-strip">
     <span class="sym-dot amber"></span>
-    <strong>1 blocker</strong>
+    <strong>{missing} blocker{'s' if missing != 1 else ''}</strong>
     <span>{esc(blocker["source"])} refresh required</span>
     <span class="sym-blocker-arrow" aria-hidden="true">↗</span>
   </div>
@@ -568,14 +621,14 @@ def render_global_pulse(profile: dict[str, Any], private_mode: bool) -> list[dic
 
     cards: list[str] = []
     for region in states:
-        is_watch = region["status"] == "Watch"
+        state_class = "active" if region["motion_mode"] == "fast" else "handoff" if region["motion_mode"] == "ambient" else "quiet"
         opacity = max(.22, int(region["load"]) / 100)
         cards.append(
             f"""
 <div class="sym-region" style="--pulse-opacity:{opacity:.2f}">
   <div class="sym-region-head">{esc(region["city"])} · {esc(region["code"])}</div>
   <div class="sym-region-time">{esc(region["time"])}</div>
-  <div class="sym-region-state {'watch' if is_watch else ''}">{esc(region["status"])} · {region["load"]}% load</div>
+  <div class="sym-region-state {state_class}">{esc(region["status"])} · {region["load"]}% load</div>
 </div>
             """
         )
@@ -689,8 +742,8 @@ def render_futures(event: dict[str, Any]) -> None:
     st.markdown(
         """
 <div class="sym-section-head">
-  <div class="sym-section-title">Decision futures</div>
-  <div class="sym-section-note">Compare what each action could cost, protect, expose, or unlock</div>
+  <div class="sym-section-title">Counterfactual outcomes</div>
+  <div class="sym-section-note">Compare what each available action could cost, protect, expose, or unlock</div>
 </div>
         """,
         unsafe_allow_html=True,
@@ -813,14 +866,15 @@ def render_outcome(event: dict[str, Any], private_mode: bool) -> None:
     st.markdown(
         f"""
 <div class="sym-section-head">
-  <div class="sym-section-title">Decision record created</div>
+  <div class="sym-section-title">Decision impact · before and after</div>
   <div class="sym-section-note">Synthetic outcome · accountable action preserved</div>
 </div>
 <section class="sym-card">
   <div class="sym-card-inner">
-    <div class="sym-status"><span class="sym-dot green"></span> {esc(outcome["state"])}</div>
-    <div class="sym-event-name" style="font-size:1.32rem">{esc(outcome["headline"])}</div>
-    <div class="sym-event-context">{esc(outcome["learning"])}</div>
+    <div class="sym-impact-grid">
+      <article class="sym-impact before"><span>Before · unresolved</span><b>{esc(event["risk"])} exposure</b><p>{esc(private_value(event["value"], private_mode))} at stake · {esc(event["challenge"])}</p></article>
+      <article class="sym-impact after"><span>After · {esc(outcome["state"])}</span><b>{esc(outcome["headline"])}</b><p>{esc(outcome["learning"])}</p></article>
+    </div>
     <div class="sym-outcome-grid">
       <div class="sym-outcome-cell"><div class="sym-value-label">Value protected / unlocked</div><b>{esc(private_value(outcome["value_note"], private_mode))}</b></div>
       <div class="sym-outcome-cell"><div class="sym-value-label">Remaining exposure</div><b>{esc(outcome["exposure_note"])}</b></div>
@@ -837,12 +891,12 @@ def render_timeline(audit_log: list[dict[str, Any]], private_mode: bool) -> None
     """Render a human-readable audit timeline rather than a raw event table."""
 
     st.markdown(
-        '<div class="sym-section-head"><div class="sym-section-title">Accountable decision record</div><div class="sym-section-note">What was authorized, by whom, and under which policy</div></div>',
+        '<div class="sym-section-head"><div class="sym-section-title">Decision replay · accountable record</div><div class="sym-section-note">Timestamped decisions, policy reason codes, and accountable authority</div></div>',
         unsafe_allow_html=True,
     )
     if not audit_log:
         st.markdown(
-            '<div class="sym-empty">No action has been authorized yet. The first confirmed decision will appear here with its evidence, policy, outcome, and accountable human.</div>',
+            '<div class="sym-empty">No action has been authorized yet. The first confirmed decision will enter the replay with its evidence, policy, outcome, and accountable human.</div>',
             unsafe_allow_html=True,
         )
         return
@@ -865,56 +919,124 @@ def render_timeline(audit_log: list[dict[str, Any]], private_mode: bool) -> None
     st.markdown(f'<div class="sym-timeline">{"".join(entries)}</div>', unsafe_allow_html=True)
 
 
-def render_analysis(event: dict[str, Any], profile: dict[str, Any], regions: list[dict[str, Any]]) -> None:
-    """Render intentionally secondary decision-analysis views."""
+def _format_projection_value(value: float) -> str:
+    """Format a synthetic projection in the compact financial notation used by the board."""
 
-    with st.expander("Analyze the decision system", expanded=False):
+    if value >= 1_000_000_000:
+        return f"${value / 1_000_000_000:.2f}B"
+    if value >= 1_000_000:
+        return f"${value / 1_000_000:.2f}M"
+    if value >= 1_000:
+        return f"${value / 1_000:.0f}K"
+    return f"${value:,.0f}"
+
+
+def _formal_chart_point(value: int, index: int, total: int) -> tuple[float, float]:
+    return 28 + (index / max(1, total - 1)) * 664, 222 - (value / 100) * 178
+
+
+def _formal_chart_path(trace: list[dict[str, int]], key: str) -> str:
+    return " ".join(
+        f"{'M' if index == 0 else 'L'}{x:.1f},{y:.1f}"
+        for index, point in enumerate(trace)
+        for x, y in [_formal_chart_point(point[key], index, len(trace))]
+    )
+
+
+def _formal_load_area(trace: list[dict[str, int]]) -> str:
+    return f"{_formal_chart_path(trace, 'load')} L692,232 L28,232 Z"
+
+
+def render_formal_signal_board(event: dict[str, Any], telemetry: dict[str, Any]) -> None:
+    """Restore the original formal signal-board language for decision review."""
+
+    trace = telemetry["trace"]
+    metrics = telemetry["metrics"]
+    latest = trace[-1]
+    grid_lines = "".join(
+        f'<line x1="28" x2="692" y1="{y}" y2="{y}" class="sym-formal-grid-line"/>' for y in (44, 88, 132, 176, 220)
+    )
+    st.markdown(
+        f"""
+<section class="sym-formal-board" aria-label="Live decision signals">
+  <div class="sym-formal-head">
+    <div>
+      <div class="sym-formal-overline">Formal Symbiosis board · evolved</div>
+      <h3>Live Signals (Ticker View)</h3>
+      <p>Trust / Risk / Friction drift through this decision. Conflicts and missing evidence remain visible to the accountable human.</p>
+    </div>
+    <div class="sym-formal-now"><span class="sym-dot green"></span> {esc(telemetry["time_basis"])}</div>
+  </div>
+  <div class="sym-formal-metrics" aria-label="Formal signal metrics">
+    <div class="trust"><span>Trust</span><b>{metrics["trust"]}</b><i></i></div>
+    <div class="risk"><span>Risk</span><b>{metrics["risk"]}</b><i></i></div>
+    <div class="friction"><span>Friction</span><b>{metrics["friction"]}</b><i></i></div>
+    <div class="latency"><span>Latency</span><b>{metrics["latency_ms"]}ms</b><i></i></div>
+  </div>
+  <div class="sym-formal-chart-wrap">
+    <svg class="sym-formal-chart" viewBox="0 0 720 250" preserveAspectRatio="none" role="img" aria-label="Synthetic trust risk and friction signal trace">
+      <defs><linearGradient id="sym-formal-load" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#48b8e8" stop-opacity=".33"/><stop offset="100%" stop-color="#48b8e8" stop-opacity="0"/></linearGradient></defs>
+      {grid_lines}
+      <text x="4" y="48" class="sym-formal-axis">100</text><text x="8" y="136" class="sym-formal-axis">50</text><text x="13" y="224" class="sym-formal-axis">0</text>
+      <path d="{_formal_load_area(trace)}" class="sym-formal-load"/>
+      <path d="{_formal_chart_path(trace, 'trust')}" class="sym-formal-line trust"/>
+      <path d="{_formal_chart_path(trace, 'risk')}" class="sym-formal-line risk"/>
+      <path d="{_formal_chart_path(trace, 'friction')}" class="sym-formal-line friction"/>
+      <circle cx="{_formal_chart_point(latest['trust'], len(trace) - 1, len(trace))[0]:.1f}" cy="{_formal_chart_point(latest['trust'], len(trace) - 1, len(trace))[1]:.1f}" r="4" class="sym-formal-dot trust"/>
+      <circle cx="{_formal_chart_point(latest['risk'], len(trace) - 1, len(trace))[0]:.1f}" cy="{_formal_chart_point(latest['risk'], len(trace) - 1, len(trace))[1]:.1f}" r="4" class="sym-formal-dot risk"/>
+      <circle cx="{_formal_chart_point(latest['friction'], len(trace) - 1, len(trace))[0]:.1f}" cy="{_formal_chart_point(latest['friction'], len(trace) - 1, len(trace))[1]:.1f}" r="4" class="sym-formal-dot friction"/>
+      <text x="28" y="244" class="sym-formal-axis">earlier</text><text x="333" y="244" class="sym-formal-axis">decision trace</text><text x="663" y="244" class="sym-formal-axis">now</text>
+    </svg>
+    <div class="sym-formal-legend"><span class="trust">Trust</span><span class="risk">Risk</span><span class="friction">Friction</span><span class="load">Operating load</span></div>
+  </div>
+</section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_analysis(
+    event: dict[str, Any], profile: dict[str, Any], regions: list[dict[str, Any]], telemetry: dict[str, Any]
+) -> None:
+    """Render the original board-risk and ledger tools as secondary review layers."""
+
+    projection = telemetry["projection"]
+    metrics = telemetry["metrics"]
+    max_bucket = max(projection["histogram"])
+    bars = "".join(
+        f'<i style="height:{max(5, round((bucket / max_bucket) * 100))}%"></i>' for bucket in projection["histogram"]
+    )
+    ledger_rows: list[str] = []
+    for item in event["evidence"]:
+        tone = "verified" if item["state"] == "verified" else "attention" if item["state"] == "conflicting" else "critical"
+        ledger_rows.append(
+            f"<tr><td>{esc(item['source'])}</td><td>Evidence</td><td><span class='sym-ledger-state {tone}'>{esc(item['state'])}</span></td><td>{esc(item['reliability'])}</td><td>{esc(item['impact'])}</td></tr>"
+        )
+    for region in sorted(regions, key=lambda item: int(item["load"]), reverse=True)[:3]:
+        tone = "verified" if region["motion_mode"] == "fast" else "attention" if region["motion_mode"] == "ambient" else "neutral"
+        ledger_rows.append(
+            f"<tr><td>{esc(region['city'])} · {esc(region['code'])}</td><td>Operating region</td><td><span class='sym-ledger-state {tone}'>{esc(region['status'])}</span></td><td>{region['load']}% load</td><td>{esc(region['posture'])}</td></tr>"
+        )
+
+    with st.expander("Formal analytics · scenario range and signal register", expanded=False):
         st.markdown(
-            """
+            f"""
 <div class="sym-section-head" style="margin-top:.1rem">
-  <div class="sym-section-title">Decision path</div>
-  <div class="sym-section-note">One source of truth: event → evidence → challenge → authorization → record</div>
+  <div class="sym-section-title">Monte Carlo Risk Projection</div>
+  <div class="sym-section-note">Seed-locked synthetic scenario range derived from this decision’s Trust / Risk / Friction state</div>
 </div>
+<div class="sym-projection-grid">
+  <section class="sym-projection-card"><span>Base exposure</span><b>{_format_projection_value(projection['base_exposure'])}</b><small>current case posture</small></section>
+  <section class="sym-projection-card"><span>P50</span><b>{_format_projection_value(projection['p50'])}</b><small>median scenario</small></section>
+  <section class="sym-projection-card"><span>P90</span><b>{_format_projection_value(projection['p90'])}</b><small>tail threshold</small></section>
+  <section class="sym-projection-card"><span>P99</span><b>{_format_projection_value(projection['p99'])}</b><small>severe tail</small></section>
+</div>
+<section class="sym-histogram-card"><div class="sym-histogram-head"><span>Scenario distribution</span><small>synthetic seed · {metrics['latency_ms']}ms signal latency</small></div><div class="sym-histogram">{bars}</div></section>
+<div class="sym-section-head" style="margin-top:1rem"><div class="sym-section-title">Signal register</div><div class="sym-section-note">The formal evidence and operating inputs behind the recommendation</div></div>
+<div class="sym-ledger-wrap"><table class="sym-ledger"><thead><tr><th>source</th><th>signal</th><th>state</th><th>measure</th><th>decision relevance</th></tr></thead><tbody>{''.join(ledger_rows)}</tbody></table></div>
             """,
             unsafe_allow_html=True,
         )
-        stages = [
-            ("Event", event["type"]),
-            ("Evidence", f"{len(event['evidence'])} inputs"),
-            ("Challenge", "Assumptions exposed"),
-            ("Authority", profile["current_user"]["role"]),
-            ("Record", event["policy"]),
-        ]
-        path_cards = "".join(
-            f'<div class="sym-region" style="flex:1"><div class="sym-region-head">{esc(label)}</div><div class="sym-region-time" style="font-size:.82rem">{esc(value)}</div></div>'
-            for label, value in stages
-        )
-        st.markdown(f'<div class="sym-region-grid" style="grid-template-columns:repeat(5,minmax(0,1fr))">{path_cards}</div>', unsafe_allow_html=True)
-
-        left, right = st.columns(2, gap="medium")
-        with left:
-            st.markdown(
-                f"""
-<section class="sym-card"><div class="sym-card-inner">
-  <div class="sym-status"><span class="sym-dot amber"></span> Uncertainty model</div>
-  <div class="sym-event-name" style="font-size:1.12rem">{event["confidence"]}% confidence</div>
-  <div class="sym-event-context">The simulation keeps conflicting and missing evidence visible. Confidence is not permission to hide uncertainty.</div>
-</div></section>
-                """,
-                unsafe_allow_html=True,
-            )
-        with right:
-            busiest = max(regions, key=lambda region: int(region["load"]))
-            st.markdown(
-                f"""
-<section class="sym-card"><div class="sym-card-inner">
-  <div class="sym-status"><span class="sym-dot green"></span> Global handoff</div>
-  <div class="sym-event-name" style="font-size:1.12rem">{esc(busiest["city"])} · {busiest["load"]}% load</div>
-  <div class="sym-event-context">Regional context is live and time-zone aware; operating activity is synthetic and tied to this world’s current scenario.</div>
-</div></section>
-                """,
-                unsafe_allow_html=True,
-            )
 
 
 def render_landing(profile: dict[str, Any]) -> None:
@@ -927,7 +1049,7 @@ def render_landing(profile: dict[str, Any]) -> None:
   <div class="sym-entry-mark" aria-hidden="true"><span>S</span><i></i><i></i><i></i></div>
   <div class="sym-kicker">Mynki See</div>
   <h1>Symbiosis</h1>
-  <p>The decision cockpit for consequential events.</p>
+  <p>The formal decision system—now a mobile-first cockpit.</p>
   <div class="sym-entry-signal"><span class="sym-dot green"></span> {esc(profile["short_name"])} ready · one decision waiting</div>
 </section>
         """,
@@ -1032,11 +1154,12 @@ def run() -> None:
 
     event = scenario_for(st.session_state.sym_world, st.session_state.sym_event_index)
     regions = regional_state(profile["id"], utc_now())
+    telemetry = decision_telemetry(event, regions)
 
     if st.session_state.sym_view == "glance":
         render_glance_header(profile)
-        render_live_simulation_canvas(event, profile, regions, st.session_state.sym_private_mode)
-        render_decision_pulse(event, st.session_state.sym_private_mode)
+        render_live_simulation_canvas(event, profile, regions, telemetry, st.session_state.sym_private_mode)
+        render_decision_pulse(event, telemetry, st.session_state.sym_private_mode)
         render_glance_controls(event)
         render_glance_futures(event, st.session_state.sym_private_mode)
         return
@@ -1052,13 +1175,14 @@ def run() -> None:
 
     render_brand(profile)
     regions = render_global_pulse(profile, st.session_state.sym_private_mode)
+    render_formal_signal_board(event, telemetry)
     render_event_and_recommendation(event, profile, st.session_state.sym_private_mode)
     render_evidence(event)
     render_futures(event)
     render_action_controls(event, profile)
     render_outcome(event, st.session_state.sym_private_mode)
     render_timeline(st.session_state.sym_audit, st.session_state.sym_private_mode)
-    render_analysis(event, profile, regions)
+    render_analysis(event, profile, regions, telemetry)
 
     st.markdown("<div class='sym-divider'></div>", unsafe_allow_html=True)
     export_col, state_col = st.columns([.78, 1.22], gap="medium")
