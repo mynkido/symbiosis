@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import html
+import importlib
 import json
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -28,7 +29,7 @@ from symbiosis_engine import (
     utc_now,
 )
 from symbiosis_profiles import WORLD_PROFILES, world_options
-from symbiosis_theme import inject_theme
+import symbiosis_theme
 
 
 st.set_page_config(
@@ -844,7 +845,9 @@ def run() -> None:
     """Run the complete single-round Symbiosis beta experience."""
 
     initialize_state()
-    inject_theme()
+    # Streamlit re-runs the entry script frequently; reloading this lightweight
+    # module keeps style changes synchronized with the active beta deployment.
+    importlib.reload(symbiosis_theme).inject_theme()
     profile = render_sidebar()
 
     if not st.session_state.sym_started:
