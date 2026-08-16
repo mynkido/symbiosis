@@ -65,6 +65,7 @@ def initialize_state() -> None:
         "sym_last_outcome_event": None,
         "sym_private_mode": False,
         "sym_show_analyze": False,
+        "sym_view": "glance",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -78,6 +79,7 @@ def reset_current_world(clear_audit: bool = False) -> None:
     st.session_state.sym_pending_action = None
     st.session_state.sym_last_outcome = None
     st.session_state.sym_last_outcome_event = None
+    st.session_state.sym_view = "glance"
     if clear_audit:
         st.session_state.sym_audit = []
 
@@ -178,6 +180,189 @@ def render_brand(profile: dict[str, Any]) -> None:
         unsafe_allow_html=True,
     )
     render_live_clock(profile["name"])
+
+
+def render_glance_header(profile: dict[str, Any]) -> None:
+    """Render only the live identity needed before a mobile decision."""
+
+    st.markdown(
+        f"""
+<div class="sym-compact-header">
+  <div class="sym-compact-mark" aria-hidden="true">S</div>
+  <div>
+    <div class="sym-kicker">Mynki See · live decision</div>
+    <div class="sym-compact-title">Symbiosis <span>/{esc(profile["short_name"])}</span></div>
+  </div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+    render_live_clock(profile["short_name"])
+
+
+def _short_signal(value: str) -> str:
+    """Keep the first-decision instruction deliberately skimmable."""
+
+    first_sentence = value.split(".", maxsplit=1)[0].strip()
+    return first_sentence or value
+
+
+def render_decision_pulse(
+    event: dict[str, Any],
+    profile: dict[str, Any],
+    regions: list[dict[str, Any]],
+    private_mode: bool,
+) -> None:
+    """Render the active decision as a visual pulse rather than a report."""
+
+    evidence = event["evidence"]
+    verified = sum(item["state"] == "verified" for item in evidence)
+    conflicting = sum(item["state"] == "conflicting" for item in evidence)
+    missing = sum(item["state"] == "missing" for item in evidence)
+    blocker = next((item for item in evidence if item["state"] == "missing"), evidence[-1])
+    active_region = max(regions, key=lambda region: int(region["load"]))
+    route = "  →  ".join(region["code"] for region in regions[:3])
+    ring_length = int(289 * int(event["confidence"]) / 100)
+    signal = esc(_short_signal(event["signal"]))
+    title = esc(private_value(event["title"], private_mode))
+    value = esc(private_value(event["value"], private_mode))
+    metric_value = esc(private_value(profile["metric_value"], private_mode))
+    ticker = (
+        f"{profile['short_name']} · {route} · {active_region['code']} {active_region['status'].upper()} "
+        f"· {profile['open_cases']} ACTIVE DECISIONS · {profile['review_cases']} HUMAN REVIEWS "
+        f"· {metric_value} {profile['metric_label'].upper()} · POLICY {event['policy']}"
+    )
+    ticker_safe = esc(ticker)
+
+    st.markdown(
+        f"""
+<section class="sym-glance" aria-label="Active decision">
+  <div class="sym-glance-status">
+    <span class="sym-status"><span class="sym-dot amber"></span> Action required</span>
+    <span class="sym-glance-queue">Queue {event["queue_position"]} · {esc(event["window"])}</span>
+  </div>
+
+  <div class="sym-ticker" aria-label="Global simulation activity">
+    <div class="sym-ticker-track"><span>{ticker_safe}</span><span aria-hidden="true">{ticker_safe}</span></div>
+  </div>
+
+  <div class="sym-live-scene">
+    <div class="sym-scene-grid" aria-hidden="true"></div>
+    <svg class="sym-flow-map" viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="sym-flow-gradient" x1="0" x2="1">
+          <stop offset="0%" stop-color="#5c8dff" stop-opacity=".18" />
+          <stop offset="50%" stop-color="#7dd8ff" stop-opacity=".98" />
+          <stop offset="100%" stop-color="#42d7a1" stop-opacity=".22" />
+        </linearGradient>
+        <filter id="sym-glow"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+      </defs>
+      <path class="sym-flow-base" d="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46" />
+      <path class="sym-flow-active" d="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46" />
+      <circle class="sym-flow-node n-one" cx="112" cy="104" r="5" />
+      <circle class="sym-flow-node n-two" cx="292" cy="173" r="5" />
+      <circle class="sym-flow-node n-three" cx="508" cy="92" r="5" />
+      <circle class="sym-flow-packet" r="5" filter="url(#sym-glow)"><animateMotion dur="4.8s" repeatCount="indefinite" path="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46" /></circle>
+    </svg>
+    <div class="sym-scene-node sym-scene-node-a"><span>LIVE</span><b>{esc(active_region["code"])}</b></div>
+    <div class="sym-scene-node sym-scene-node-b"><span>SIGNALS</span><b>{event["related_signals"]}</b></div>
+    <div class="sym-decision-orb" style="--ring-length:{ring_length}; --world-accent:{esc(profile['accent'])}">
+      <div class="sym-orb-halo"></div>
+      <svg class="sym-confidence-ring" viewBox="0 0 112 112" aria-hidden="true">
+        <circle class="sym-ring-track" cx="56" cy="56" r="46" />
+        <circle class="sym-ring-value" cx="56" cy="56" r="46" />
+      </svg>
+      <div class="sym-orb-core">
+        <span>CONFIDENCE</span>
+        <strong>{event["confidence"]}%</strong>
+        <small>{esc(event["risk"])} exposure</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="sym-glance-title-row">
+    <div>
+      <div class="sym-glance-type">{esc(event["type"])}</div>
+      <h2>{title}</h2>
+    </div>
+    <div class="sym-glance-value"><span>AT STAKE</span><b>{value}</b></div>
+  </div>
+
+  <div class="sym-action-signal">
+    <div class="sym-action-label">Strongest next action</div>
+    <div class="sym-action-value">{esc(event["recommendation"])}</div>
+    <p>{signal}</p>
+  </div>
+
+  <div class="sym-glance-metrics" aria-label="Decision signal summary">
+    <div class="sym-glance-metric verified"><b>{verified}</b><span>verified</span><i></i></div>
+    <div class="sym-glance-metric conflict"><b>{conflicting}</b><span>conflict</span><i></i></div>
+    <div class="sym-glance-metric missing"><b>{missing}</b><span>blocker</span><i></i></div>
+    <div class="sym-glance-metric value"><b>{value}</b><span>at stake</span><i></i></div>
+  </div>
+
+  <div class="sym-blocker-strip">
+    <span class="sym-dot amber"></span>
+    <strong>1 blocker</strong>
+    <span>{esc(blocker["source"])} refresh required</span>
+    <span class="sym-blocker-arrow" aria-hidden="true">↗</span>
+  </div>
+
+</section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_glance_futures(event: dict[str, Any], private_mode: bool) -> None:
+    """Expose three outcomes as visual scan cards before their detailed rationale."""
+
+    cards: list[str] = []
+    short_labels = {"authorize": "NOW", "condition": "CONDITIONS", "hold": "HOLD"}
+    for option in event["options"]:
+        tone = "recommended" if option["tone"] == "recommended" else option["key"]
+        card_value = esc(private_value(option["protect"], private_mode))
+        cards.append(
+            f"""
+<article class="sym-future-scan {tone}">
+  <div class="sym-future-scan-top"><span>{short_labels.get(option["key"], option["key"].upper())}</span>{'<em>BEST</em>' if option["tone"] == "recommended" else ''}</div>
+  <b>{card_value}</b>
+  <div class="sym-scan-bar"><i style="--scan:{option["confidence"]}%"></i></div>
+  <small>{option["confidence"]}% confidence</small>
+</article>
+            """
+        )
+    st.markdown(
+        f"""
+<div class="sym-scan-head"><span>Three possible futures</span><small>Compare in review</small></div>
+<div class="sym-future-scan-grid">{"".join(cards)}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_glance_controls(event: dict[str, Any]) -> None:
+    """Keep a decisive, thumb-reachable next step above all deep detail."""
+
+    cta, hold = st.columns([1.35, .65], gap="small")
+    with cta:
+        if st.button(
+            f"Review · {event['recommendation']}",
+            key=f"{event['id']}-open-review",
+            type="primary",
+            use_container_width=True,
+        ):
+            st.session_state.sym_view = "review"
+            st.rerun()
+    with hold:
+        if st.button("Hold", key=f"{event['id']}-quick-hold", use_container_width=True):
+            st.session_state.sym_pending_action = "hold"
+            st.session_state.sym_view = "review"
+            st.rerun()
+    st.markdown(
+        '<div class="sym-glance-footnote">AI recommends. An accountable human authorizes.</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_global_pulse(profile: dict[str, Any], private_mode: bool) -> list[dict[str, Any]]:
@@ -556,37 +741,30 @@ def render_analysis(event: dict[str, Any], profile: dict[str, Any], regions: lis
 
 
 def render_landing(profile: dict[str, Any]) -> None:
-    """Offer a simple first-use entry instead of an empty dashboard."""
+    """Offer a deliberately short entry that previews motion, not a product essay."""
 
-    st.markdown("<div style='height:4vh'></div>", unsafe_allow_html=True)
-    render_brand(profile)
-    st.markdown("<div style='height:1.1rem'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:5vh'></div>", unsafe_allow_html=True)
     st.markdown(
         f"""
-<section class="sym-card">
-  <div class="sym-card-inner">
-    <div class="sym-status"><span class="sym-dot green"></span> Ready to begin</div>
-    <div class="sym-event-name">One event. One accountable decision. One complete record.</div>
-    <div class="sym-event-context">
-      Enter {esc(profile["name"])} to experience a time-aware synthetic operating world.
-      A live event will assemble evidence, expose uncertainty, compare decision futures,
-      and wait for a human authorization.
-    </div>
-  </div>
+<section class="sym-entry">
+  <div class="sym-entry-mark" aria-hidden="true"><span>S</span><i></i><i></i><i></i></div>
+  <div class="sym-kicker">Mynki See</div>
+  <h1>Symbiosis</h1>
+  <p>The decision cockpit for consequential events.</p>
+  <div class="sym-entry-signal"><span class="sym-dot green"></span> {esc(profile["short_name"])} ready · one decision waiting</div>
 </section>
         """,
         unsafe_allow_html=True,
     )
-    cta_col, note_col = st.columns([1.05, .95], gap="medium")
-    with cta_col:
-        if st.button("Start live scenario", type="primary", use_container_width=True):
-            st.session_state.sym_started = True
-            st.rerun()
-    with note_col:
-        st.markdown(
-            '<div class="sym-empty">All institutions, people, events, assets, and outcomes are synthetic. The time, interaction, authorization, and audit behaviour are real.</div>',
-            unsafe_allow_html=True,
-        )
+    render_live_clock(profile["short_name"])
+    if st.button("Enter live decision", type="primary", use_container_width=True):
+        st.session_state.sym_started = True
+        st.session_state.sym_view = "glance"
+        st.rerun()
+    st.markdown(
+        '<div class="sym-entry-note">Live operating simulation · Scenario data is synthetic</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_sidebar() -> dict[str, Any]:
@@ -623,12 +801,14 @@ def render_sidebar() -> dict[str, Any]:
             st.session_state.sym_pending_action = None
             st.session_state.sym_last_outcome = None
             st.session_state.sym_last_outcome_event = None
+            st.session_state.sym_view = "glance"
             st.rerun()
         if st.button("Replay this world", use_container_width=True):
             reset_current_world(clear_audit=True)
             st.rerun()
         if st.session_state.sym_started and st.button("Return to welcome", use_container_width=True):
             st.session_state.sym_started = False
+            st.session_state.sym_view = "glance"
             st.rerun()
 
         st.markdown("<div class='sym-divider'></div>", unsafe_allow_html=True)
@@ -671,10 +851,27 @@ def run() -> None:
         render_landing(profile)
         return
 
+    event = scenario_for(st.session_state.sym_world, st.session_state.sym_event_index)
+    regions = regional_state(profile["id"], utc_now())
+
+    if st.session_state.sym_view == "glance":
+        render_glance_header(profile)
+        render_decision_pulse(event, profile, regions, st.session_state.sym_private_mode)
+        render_glance_controls(event)
+        render_glance_futures(event, st.session_state.sym_private_mode)
+        return
+
+    detail_action, detail_live = st.columns([1.1, .9], gap="small")
+    with detail_action:
+        st.markdown('<div class="sym-detail-kicker">Decision detail · read only what changes the authorization</div>', unsafe_allow_html=True)
+    with detail_live:
+        if st.button("← Back to live view", key=f"{event['id']}-back-to-glance", use_container_width=True):
+            st.session_state.sym_view = "glance"
+            st.session_state.sym_pending_action = None
+            st.rerun()
+
     render_brand(profile)
     regions = render_global_pulse(profile, st.session_state.sym_private_mode)
-    event = scenario_for(st.session_state.sym_world, st.session_state.sym_event_index)
-
     render_event_and_recommendation(event, profile, st.session_state.sym_private_mode)
     render_evidence(event)
     render_futures(event)
