@@ -45,21 +45,38 @@ def regional_state(world_id: str, now: datetime | None = None) -> list[dict[str,
     for region in REGIONS:
         local = now.astimezone(ZoneInfo(region["zone"]))
         hour = local.hour
-        working = 7 <= hour < 20
+        local_weekday = local.weekday() < 5
+        in_business_hours = 7 <= hour < 20
+        working = local_weekday and in_business_hours
+        handoff_window = local_weekday and (5 <= hour < 7 or 20 <= hour < 22)
         night_watch = not working
         key = f"{world_id}:{region['code']}:{time_bucket}"
-        load = deterministic_int(key, 24, 92)
+        network_load = deterministic_int(key, 24, 92)
 
-        if is_digital:
-            status = "Active" if load >= 46 else "Monitoring"
-            posture = "24/7 network"
-        elif working:
-            status = "Active" if load >= 38 else "Ready"
+        if working:
+            local_operating_state = "regional_window"
+            motion_mode = "fast"
+            status = "Active" if network_load >= 38 else "Ready"
             posture = "Regional operating window"
+            load = network_load
+        elif handoff_window:
+            local_operating_state = "handoff"
+            motion_mode = "ambient"
+            status = "Handoff"
+            posture = "Pre-open / after-hours handoff"
+            load = max(14, network_load - 16)
+        elif not local_weekday:
+            local_operating_state = "weekend"
+            motion_mode = "still"
+            status = "Network watch" if is_digital else "Weekend watch"
+            posture = "Weekend oversight"
+            load = max(6, network_load - 42)
         else:
-            status = "Watch"
+            local_operating_state = "after_hours"
+            motion_mode = "still"
+            status = "Network watch" if is_digital else "Watch"
             posture = "After-hours monitoring"
-            load = max(12, load - 20)
+            load = max(8, network_load - 35)
 
         results.append(
             {
@@ -71,6 +88,16 @@ def regional_state(world_id: str, now: datetime | None = None) -> list[dict[str,
                 "load": load,
                 "working": working,
                 "night_watch": night_watch,
+                # Local time/day is factual. The activity value and operating
+                # route are deterministic synthetic simulation data.
+                "local_weekday": local_weekday,
+                "in_business_hours": in_business_hours,
+                "local_operating_state": local_operating_state,
+                "motion_mode": motion_mode,
+                "simulation_active": motion_mode != "still",
+                "network_active": is_digital,
+                "activity_basis": "synthetic_24_7_network" if is_digital else "synthetic_regional_operating_window",
+                "network_load": network_load,
             }
         )
 
@@ -81,7 +108,8 @@ def active_region_label(world_id: str, now: datetime | None = None) -> str:
     """Summarise the most active synthetic region for compact pulse labels."""
 
     states = regional_state(world_id, now)
-    active = max(states, key=lambda region: int(region["load"]))
+    motion_rank = {"fast": 3, "ambient": 2, "still": 1}
+    active = max(states, key=lambda region: (motion_rank[region["motion_mode"]], int(region["load"])))
     return f"{active['code']} {active['status'].upper()}"
 
 

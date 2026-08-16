@@ -209,83 +209,252 @@ def _short_signal(value: str) -> str:
     return first_sentence or value
 
 
-def render_decision_pulse(
+def render_live_simulation_canvas(
     event: dict[str, Any],
     profile: dict[str, Any],
     regions: list[dict[str, Any]],
     private_mode: bool,
 ) -> None:
-    """Render the active decision as a visual pulse rather than a report."""
+    """Render the three live visual systems with mobile tap-to-inspect controls.
+
+    The visual is intentionally self-contained so a tap can pause its CSS motion
+    and explain the selected regional session without changing the canonical
+    Streamlit decision state.
+    """
+
+    blocker = next((item for item in event["evidence"] if item["state"] == "missing"), event["evidence"][-1])
+    focus = max(
+        regions,
+        key=lambda region: ({"fast": 3, "ambient": 2, "still": 1}[region["motion_mode"]], int(region["load"])),
+    )
+    tone = "critical" if event["risk"].lower() == "critical" else "attention" if event["risk"].lower() in {"elevated", "moderate"} else "steady"
+    payload = {
+        "world": profile["short_name"],
+        "continuous_network": profile["id"] == "axiom",
+        "tone": tone,
+        "event": {
+            "value": private_value(event["value"], private_mode),
+            "confidence": event["confidence"],
+            "risk": event["risk"],
+            "blocker": blocker["source"],
+            "action": event["recommendation"],
+            "reviews": profile["review_cases"],
+        },
+        "focus": focus["code"],
+        "regions": [
+            {
+                key: region[key]
+                for key in (
+                    "code",
+                    "city",
+                    "zone",
+                    "x",
+                    "y",
+                    "load",
+                    "motion_mode",
+                    "local_operating_state",
+                    "network_active",
+                )
+            }
+            for region in regions
+        ],
+    }
+    serialized_payload = json.dumps(payload).replace("</", "<\\/")
+
+    components.html(
+        """
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; overflow: hidden; background: transparent; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  button { font: inherit; }
+  .live-sim {
+    position: relative;
+    overflow: hidden;
+    min-height: 304px;
+    border: 1px solid rgba(47,128,237,.2);
+    border-radius: 21px;
+    color: #153854;
+    background: linear-gradient(145deg, rgba(255,255,255,.99), rgba(244,251,255,.95));
+    box-shadow: 0 18px 40px rgba(53,96,132,.13), inset 0 1px 0 rgba(255,255,255,.94);
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sim-top { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px 7px; }
+  .sim-status { display:inline-flex; align-items:center; gap:6px; color:#4d6d86; font-size:9px; font-weight:820; letter-spacing:.1em; text-transform:uppercase; }
+  .sim-status i { width:7px; height:7px; border-radius:50%; background:#f2994a; box-shadow:0 0 0 4px rgba(242,153,74,.12); }
+  .steady .sim-status i { background:#00b894; box-shadow:0 0 0 4px rgba(0,184,148,.11); }
+  .critical .sim-status i { background:#eb5757; box-shadow:0 0 0 4px rgba(235,87,87,.12); }
+  .tap-label { color:#2f80ed; font-size:9px; font-weight:820; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; }
+  .ticker { height:27px; overflow:hidden; border-top:1px solid rgba(47,128,237,.1); border-bottom:1px solid rgba(47,128,237,.1); background:linear-gradient(90deg, rgba(0,210,255,.11), rgba(255,255,255,.62), rgba(47,128,237,.08)); }
+  .ticker-track { display:flex; align-items:center; width:max-content; min-width:200%; height:100%; animation: ticker-slide 29s linear infinite; }
+  .ticker-track span { padding-right:38px; color:#356f99; font-size:8.5px; font-weight:820; letter-spacing:.085em; white-space:nowrap; }
+  .sim-stage { position:relative; height:205px; overflow:hidden; isolation:isolate; }
+  .sim-stage:before { content:""; position:absolute; width:250px; height:250px; left:50%; top:50%; z-index:0; border-radius:50%; transform:translate(-50%,-50%); background:radial-gradient(circle, rgba(0,210,255,.15), rgba(47,128,237,.075) 43%, transparent 70%); }
+  .grid { position:absolute; inset:0; z-index:0; opacity:.55; background-image:linear-gradient(rgba(47,128,237,.09) 1px, transparent 1px),linear-gradient(90deg,rgba(47,128,237,.09) 1px,transparent 1px); background-size:24px 24px; mask-image:linear-gradient(to bottom, transparent, #000 18%, #000 84%, transparent); }
+  .stream-map { position:absolute; inset:0; z-index:1; width:100%; height:100%; }
+  .ambient { fill:none; stroke:rgba(0,210,255,.28); stroke-linecap:round; stroke-dasharray:13 19; animation: ambient-drift 14s cubic-bezier(.42,0,.58,1) infinite; }
+  .ambient.a { stroke-width:1.2; }
+  .ambient.b { stroke:rgba(47,128,237,.2); stroke-width:1.55; animation-duration:20s; animation-direction:reverse; }
+  .ambient.c { stroke:rgba(18,184,134,.18); stroke-width:.95; animation-duration:17s; animation-delay:-4s; }
+  .route-base { fill:none; stroke:rgba(47,128,237,.2); stroke-width:1.25; }
+  .route-live { fill:none; stroke:url(#streamGradient); stroke-width:2.35; stroke-linecap:round; stroke-dasharray:9 10; animation: route-flow 5.8s linear infinite; filter:drop-shadow(0 1px 2px rgba(0,210,255,.24)); }
+  .orbit { position:absolute; z-index:2; left:50%; top:50%; border:1px dashed rgba(0,210,255,.35); border-radius:50%; transform:translate(-50%,-50%); }
+  .orbit.one { width:167px; height:167px; animation: orbit-cw 11s linear infinite; }
+  .orbit.two { width:205px; height:205px; border-color:rgba(47,128,237,.21); animation: orbit-ccw 17s linear infinite; }
+  .orbit i { position:absolute; width:6px; height:6px; border-radius:50%; background:#00d2ff; box-shadow:0 0 0 4px rgba(0,210,255,.1),0 0 12px rgba(0,210,255,.52); animation: particle-burst 2.8s ease-in-out infinite; }
+  .orbit i:nth-child(1) { top:-4px; left:48%; }
+  .orbit i:nth-child(2) { right:5%; bottom:13%; width:4px; height:4px; animation-delay:-.85s; }
+  .orbit i:nth-child(3) { left:7%; top:62%; width:3px; height:3px; animation-delay:-1.7s; }
+  .orbit.two i { background:#2f80ed; box-shadow:0 0 0 3px rgba(47,128,237,.1),0 0 9px rgba(47,128,237,.3); }
+  .orbit.two i:nth-child(1) { top:18%; left:5%; }
+  .orbit.two i:nth-child(2) { right:13%; bottom:5%; animation-delay:-1.25s; }
+  .fast .orbit.one, .network-fast .orbit.one { animation-duration:7s; } .fast .orbit.two, .network-fast .orbit.two { animation-duration:11s; }
+  .network-fast .ambient { animation-duration:8s; }
+  .network-fast .route-live { animation-duration:3.9s; }
+  .still .ambient { animation-duration:36s; opacity:.3; } .still .route-live { animation-duration:18s; opacity:.38; } .still .orbit { opacity:.44; animation-duration:24s; }
+  .meter { position:absolute; z-index:4; left:50%; top:50%; width:117px; height:117px; display:grid; place-items:center; border-radius:50%; transform:translate(-50%,-50%); background:radial-gradient(circle at 38% 28%,#fff 0%,#eef9ff 48%,#deeffb 76%); box-shadow:0 0 0 1px rgba(47,128,237,.2),0 11px 27px rgba(47,128,237,.16),inset 0 0 20px rgba(0,210,255,.12); }
+  .meter:before { content:""; position:absolute; inset:8px; border-radius:inherit; background:conic-gradient(#2f80ed calc(var(--confidence) * 1%), rgba(47,128,237,.12) 0); -webkit-mask:radial-gradient(transparent 59%, #000 60%); mask:radial-gradient(transparent 59%, #000 60%); transform:rotate(-90deg); animation: meter-reveal .9s cubic-bezier(.18,.86,.24,1) both; }
+  .meter-copy { position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; text-align:center; }
+  .meter-copy span { color:#5c7d97; font-size:8px; font-weight:830; letter-spacing:.105em; }
+  .meter-copy strong { color:#153854; font-size:27px; line-height:1; letter-spacing:-.07em; }
+  .meter-copy small { color:#607c93; font-size:8px; font-weight:760; }
+  .region-node { position:absolute; z-index:5; display:grid; place-items:center; width:35px; height:28px; margin:-14px 0 0 -17px; border:1px solid rgba(47,128,237,.17); border-radius:9px; color:#47708e; background:rgba(255,255,255,.78); box-shadow:0 6px 16px rgba(57,97,132,.09); font-size:8px; font-weight:850; letter-spacing:.08em; cursor:pointer; }
+  .region-node.active { color:#fff; border-color:#2f80ed; background:linear-gradient(135deg,#2f80ed,#00bfe8); box-shadow:0 7px 17px rgba(47,128,237,.23); }
+  .region-node[data-mode="still"] { color:#7e92a2; }
+  .region-node.active[data-mode="still"] { color:#fff; background:linear-gradient(135deg,#75899a,#98a9b6); border-color:#75899a; }
+  .inspector { position:absolute; z-index:9; left:10px; right:10px; bottom:9px; padding:9px 10px; border:1px solid rgba(47,128,237,.22); border-radius:13px; background:rgba(255,255,255,.95); box-shadow:0 10px 25px rgba(47,88,124,.16); opacity:0; transform:translateY(10px); pointer-events:none; transition:opacity .18s ease, transform .18s ease; }
+  .paused .inspector { opacity:1; transform:translateY(0); }
+  .inspect-top { display:flex; justify-content:space-between; gap:8px; color:#2f80ed; font-size:8px; font-weight:840; letter-spacing:.09em; }
+  .inspect-top span:last-child { color:#6d879b; }
+  .inspector strong { display:block; margin-top:3px; color:#153854; font-size:13px; letter-spacing:-.02em; }
+  .inspector p { margin:2px 0 0; color:#5b768d; font-size:10px; line-height:1.3; }
+  .paused .ambient, .paused .route-live, .paused .orbit, .paused .ticker-track, .paused .meter:before, .paused .region-node { animation-play-state:paused !important; }
+  .sim-footer { display:flex; align-items:center; justify-content:space-between; gap:9px; min-height:35px; padding:7px 12px 9px; border-top:1px solid rgba(47,128,237,.1); color:#5f7c94; font-size:9px; font-weight:740; }
+  .sim-footer b { color:#173955; font-size:10px; }
+  .mood { display:inline-flex; align-items:center; gap:5px; color:#b46a18; font-size:8px; font-weight:840; letter-spacing:.09em; text-transform:uppercase; }
+  .mood i { width:6px; height:6px; border-radius:50%; background:#f2994a; box-shadow:0 0 0 3px rgba(242,153,74,.12); }
+  .steady .mood { color:#138167; } .steady .mood i { background:#12b886; box-shadow:0 0 0 3px rgba(18,184,134,.11); }
+  .critical .mood { color:#b53d3d; } .critical .mood i { background:#eb5757; box-shadow:0 0 0 3px rgba(235,87,87,.12); }
+  @keyframes ticker-slide { to { transform:translateX(-50%); } }
+  @keyframes ambient-drift { from { stroke-dashoffset:0; } 50% { stroke-dashoffset:-92; } to { stroke-dashoffset:-186; } }
+  @keyframes route-flow { to { stroke-dashoffset:-118; } }
+  @keyframes orbit-cw { from { transform:translate(-50%,-50%) rotate(0deg); } to { transform:translate(-50%,-50%) rotate(360deg); } }
+  @keyframes orbit-ccw { from { transform:translate(-50%,-50%) rotate(360deg); } to { transform:translate(-50%,-50%) rotate(0deg); } }
+  @keyframes particle-burst { 0%,100% { opacity:.38; transform:scale(.7); } 45% { opacity:1; transform:scale(1.55); } 65% { opacity:.35; transform:scale(.82); } }
+  @keyframes meter-reveal { from { opacity:0; transform:rotate(-90deg) scale(.82); } to { opacity:1; transform:rotate(-90deg) scale(1); } }
+  @media (prefers-reduced-motion:reduce) { *,*:before,*:after { animation:none !important; transition:none !important; } }
+</style>
+<main class="live-sim" id="live-sim" aria-label="Interactive live operating simulation" role="button" tabindex="0">
+  <div class="sim-top"><div class="sim-status"><i></i><span>Live operating simulation</span></div><div class="tap-label" id="tap-label">Tap to inspect</div></div>
+  <div class="ticker"><div class="ticker-track"><span id="ticker-a"></span><span id="ticker-b" aria-hidden="true"></span></div></div>
+  <section class="sim-stage" id="sim-stage">
+    <div class="grid"></div>
+    <svg class="stream-map" viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="streamGradient" x1="0" x2="1"><stop offset="0%" stop-color="#2f80ed" stop-opacity=".15"/><stop offset="50%" stop-color="#00d2ff" stop-opacity=".98"/><stop offset="100%" stop-color="#12b886" stop-opacity=".24"/></linearGradient></defs>
+      <path class="ambient a" d="M-35,86 C72,24 117,174 218,104 S348,34 442,120 S555,184 650,84"/>
+      <path class="ambient b" d="M-30,185 C75,121 123,241 236,167 S379,102 479,190 S575,242 650,154"/>
+      <path class="ambient c" d="M-20,144 C78,192 146,66 250,144 S378,215 492,109 S573,35 650,114"/>
+      <path class="route-base" d="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46"/>
+      <path class="route-live" d="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46"/>
+    </svg>
+    <div class="orbit one"><i></i><i></i><i></i></div><div class="orbit two"><i></i><i></i></div>
+    <div class="meter" id="meter"><div class="meter-copy"><span>CONFIDENCE</span><strong id="confidence"></strong><small id="risk-label"></small></div></div>
+    <div id="nodes"></div>
+    <div class="inspector" id="inspector"><div class="inspect-top"><span>PAUSED · INSPECTING</span><span>Tap to resume</span></div><strong id="inspect-title"></strong><p id="inspect-copy"></p></div>
+  </section>
+  <div class="sim-footer"><div><b id="footer-focus"></b> <span id="footer-state"></span></div><div class="mood"><i></i><span id="mood-label"></span></div></div>
+</main>
+<script>
+  const model = """ + serialized_payload + """;
+  const root = document.getElementById('live-sim');
+  const nodes = document.getElementById('nodes');
+  const meter = document.getElementById('meter');
+  const confidence = document.getElementById('confidence');
+  const riskLabel = document.getElementById('risk-label');
+  const inspectTitle = document.getElementById('inspect-title');
+  const inspectCopy = document.getElementById('inspect-copy');
+  const footerFocus = document.getElementById('footer-focus');
+  const footerState = document.getElementById('footer-state');
+  const moodLabel = document.getElementById('mood-label');
+  const tapLabel = document.getElementById('tap-label');
+  let selected = model.regions.find(region => region.code === model.focus) || model.regions[0];
+  let paused = false;
+
+  confidence.textContent = model.event.confidence + '%';
+  riskLabel.textContent = model.event.risk + ' exposure';
+  meter.style.setProperty('--confidence', model.event.confidence);
+  root.classList.add(model.tone);
+
+  function localSession(region) {
+    const parts = new Intl.DateTimeFormat('en-US', {weekday:'short', hour:'2-digit', minute:'2-digit', hourCycle:'h23', timeZone:region.zone}).formatToParts(new Date());
+    const read = type => parts.find(part => part.type === type)?.value || '';
+    const day = read('weekday'); const hour = Number(read('hour')); const minute = read('minute');
+    const weekday = !['Sat', 'Sun'].includes(day);
+    const regionalWindow = weekday && hour >= 7 && hour < 20;
+    const handoff = weekday && ((hour >= 5 && hour < 7) || (hour >= 20 && hour < 22));
+    let mode = 'still'; let label = day === 'Sat' || day === 'Sun' ? 'Weekend watch' : 'After-hours watch';
+    if (regionalWindow) { mode = 'fast'; label = 'Regional window active'; }
+    else if (handoff) { mode = 'ambient'; label = 'Pre-open / handoff'; }
+    return { day, time: String(hour).padStart(2, '0') + ':' + minute, mode, label };
+  }
+  function activityCopy(session) {
+    if (session.mode === 'fast') return 'Synthetic regional activity is moving with this local operating window.';
+    if (session.mode === 'ambient') return 'Synthetic handoff activity is moving slowly while this regional window prepares.';
+    return model.continuous_network ? 'Local human session is quiet; the synthetic 24/7 network remains guarded in the background.' : 'The regional operating window is quiet; the visual stream is intentionally calm.';
+  }
+  function paint() {
+    const session = localSession(selected);
+    root.classList.remove('fast', 'ambient', 'still', 'network-fast'); root.classList.add(model.continuous_network ? 'network-fast' : session.mode);
+    document.querySelectorAll('.region-node').forEach(button => button.classList.toggle('active', button.dataset.code === selected.code));
+    const networkState = model.continuous_network ? '24/7 SYNTHETIC NETWORK ACTIVE · ' : '';
+    const ticker = model.world + ' · ' + networkState + selected.code + ' ' + session.day.toUpperCase() + ' ' + session.time + ' · ' + session.label.toUpperCase() + ' · ' + model.event.value + ' AT STAKE · ' + model.event.confidence + '% CONFIDENCE · ' + model.event.blocker.toUpperCase() + ' CHECK · ' + model.event.reviews + ' HUMAN REVIEWS';
+    document.getElementById('ticker-a').textContent = ticker; document.getElementById('ticker-b').textContent = ticker;
+    inspectTitle.textContent = selected.city + ' · ' + session.day + ' ' + session.time;
+    inspectCopy.textContent = session.label + ' · synthetic activity ' + selected.load + '% · ' + activityCopy(session);
+    footerFocus.textContent = selected.code + ' · ' + session.label;
+    footerState.textContent = ' · ' + model.event.value + ' at stake';
+    moodLabel.textContent = model.tone === 'critical' ? 'Critical stop' : model.tone === 'attention' ? 'Human attention' : 'Verified flow';
+  }
+  model.regions.forEach(region => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'region-node'; button.dataset.code = region.code; button.dataset.mode = region.motion_mode;
+    button.style.left = region.x + '%'; button.style.top = region.y + '%'; button.textContent = region.code;
+    button.setAttribute('aria-label', 'Inspect ' + region.city);
+    button.addEventListener('click', event => { event.stopPropagation(); selected = region; paused = true; root.classList.add('paused'); tapLabel.textContent = 'Tap to resume'; paint(); });
+    nodes.appendChild(button);
+  });
+  function togglePause() { paused = !paused; root.classList.toggle('paused', paused); tapLabel.textContent = paused ? 'Tap to resume' : 'Tap to inspect'; paint(); }
+  root.addEventListener('click', togglePause);
+  root.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); togglePause(); } });
+  window.setInterval(() => { if (!paused) paint(); }, 1000);
+  paint();
+</script>
+        """,
+        height=306,
+        scrolling=False,
+    )
+
+
+def render_decision_pulse(event: dict[str, Any], private_mode: bool) -> None:
+    """Render the compact decision reading beneath the live visual."""
 
     evidence = event["evidence"]
     verified = sum(item["state"] == "verified" for item in evidence)
     conflicting = sum(item["state"] == "conflicting" for item in evidence)
     missing = sum(item["state"] == "missing" for item in evidence)
     blocker = next((item for item in evidence if item["state"] == "missing"), evidence[-1])
-    active_region = max(regions, key=lambda region: int(region["load"]))
-    route = "  →  ".join(region["code"] for region in regions[:3])
-    ring_length = int(289 * int(event["confidence"]) / 100)
-    motion_class = "sym-risk-elevated" if event["risk"].lower() == "elevated" else "sym-risk-steady"
     signal = esc(_short_signal(event["signal"]))
     title = esc(private_value(event["title"], private_mode))
     value = esc(private_value(event["value"], private_mode))
-    metric_value = esc(private_value(profile["metric_value"], private_mode))
-    ticker = (
-        f"{profile['short_name']} · {route} · {active_region['code']} {active_region['status'].upper()} "
-        f"· {profile['open_cases']} ACTIVE DECISIONS · {profile['review_cases']} HUMAN REVIEWS "
-        f"· {metric_value} {profile['metric_label'].upper()} · POLICY {event['policy']}"
-    )
-    ticker_safe = esc(ticker)
 
     st.markdown(
         f"""
-<section class="sym-glance" aria-label="Active decision">
+<section class="sym-glance sym-decision-summary" aria-label="Active decision">
   <div class="sym-glance-status">
     <span class="sym-status"><span class="sym-dot amber"></span> Action required</span>
     <span class="sym-glance-queue">Queue {event["queue_position"]} · {esc(event["window"])}</span>
-  </div>
-
-  <div class="sym-ticker" aria-label="Global simulation activity">
-    <div class="sym-ticker-track"><span>{ticker_safe}</span><span aria-hidden="true">{ticker_safe}</span></div>
-  </div>
-
-  <div class="sym-live-scene {motion_class}">
-    <div class="sym-scene-grid" aria-hidden="true"></div>
-    <svg class="sym-flow-map" viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
-      <defs>
-        <linearGradient id="sym-flow-gradient" x1="0" x2="1">
-          <stop offset="0%" stop-color="#2f80ed" stop-opacity=".16" />
-          <stop offset="50%" stop-color="#00d2ff" stop-opacity=".96" />
-          <stop offset="100%" stop-color="#27ae89" stop-opacity=".24" />
-        </linearGradient>
-        <filter id="sym-glow"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-      </defs>
-      <path class="sym-ambient-wave sym-ambient-wave-a" d="M-35,86 C72,24 117,174 218,104 S348,34 442,120 S555,184 650,84" />
-      <path class="sym-ambient-wave sym-ambient-wave-b" d="M-30,185 C75,121 123,241 236,167 S379,102 479,190 S575,242 650,154" />
-      <path class="sym-ambient-wave sym-ambient-wave-c" d="M-20,144 C78,192 146,66 250,144 S378,215 492,109 S573,35 650,114" />
-      <path class="sym-flow-base" d="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46" />
-      <path class="sym-flow-active" d="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46" />
-      <circle class="sym-flow-node n-one" cx="112" cy="104" r="5" />
-      <circle class="sym-flow-node n-two" cx="292" cy="173" r="5" />
-      <circle class="sym-flow-node n-three" cx="508" cy="92" r="5" />
-      <circle class="sym-flow-packet" r="5" filter="url(#sym-glow)"><animateMotion dur="4.8s" repeatCount="indefinite" path="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46" /></circle>
-    </svg>
-    <div class="sym-scene-node sym-scene-node-a"><span>LIVE</span><b>{esc(active_region["code"])}</b></div>
-    <div class="sym-scene-node sym-scene-node-b"><span>SIGNALS</span><b>{event["related_signals"]}</b></div>
-    <div class="sym-orbit sym-orbit-one" aria-hidden="true"><i></i><i></i><i></i></div>
-    <div class="sym-orbit sym-orbit-two" aria-hidden="true"><i></i><i></i></div>
-    <div class="sym-decision-orb" style="--ring-length:{ring_length}; --world-accent:{esc(profile['accent'])}">
-      <div class="sym-orb-halo"></div>
-      <svg class="sym-confidence-ring" viewBox="0 0 112 112" aria-hidden="true">
-        <circle class="sym-ring-track" cx="56" cy="56" r="46" />
-        <circle class="sym-ring-value" cx="56" cy="56" r="46" />
-      </svg>
-      <div class="sym-orb-core">
-        <span>CONFIDENCE</span>
-        <strong>{event["confidence"]}%</strong>
-        <small>{esc(event["risk"])} exposure</small>
-      </div>
-    </div>
   </div>
 
   <div class="sym-glance-title-row">
@@ -866,7 +1035,8 @@ def run() -> None:
 
     if st.session_state.sym_view == "glance":
         render_glance_header(profile)
-        render_decision_pulse(event, profile, regions, st.session_state.sym_private_mode)
+        render_live_simulation_canvas(event, profile, regions, st.session_state.sym_private_mode)
+        render_decision_pulse(event, st.session_state.sym_private_mode)
         render_glance_controls(event)
         render_glance_futures(event, st.session_state.sym_private_mode)
         return
