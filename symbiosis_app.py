@@ -100,9 +100,9 @@ def render_live_clock(world_name: str) -> None:
     components.html(
         """
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: light; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: #071019; overflow: hidden; }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
   .clock-shell {
     height: 48px;
     display: flex;
@@ -110,17 +110,18 @@ def render_live_clock(world_name: str) -> None:
     justify-content: space-between;
     gap: 10px;
     padding: 0 11px;
-    border: 1px solid rgba(170,194,218,.16);
+    border: 1px solid rgba(47,128,237,.18);
     border-radius: 14px;
-    color: #eaf2fa;
-    background: linear-gradient(110deg, rgba(20,38,56,.94), rgba(8,18,29,.94));
+    color: #142a43;
+    background: linear-gradient(110deg, rgba(255,255,255,.92), rgba(243,250,255,.88));
+    box-shadow: 0 9px 28px rgba(44, 91, 137, .09);
     font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
   .left { min-width: 0; display: flex; align-items: center; gap: 8px; }
-  .light { width: 7px; height: 7px; border-radius: 50%; background: #42d7a1; box-shadow: 0 0 0 4px rgba(66,215,161,.12); }
-  .label { color: #94a9bd; font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .time { color: #f4f8fc; font-size: 12px; font-weight: 760; letter-spacing: .01em; text-align: right; white-space: nowrap; }
-  .sub { color: #8fa6bc; font-size: 10px; font-weight: 600; }
+  .light { width: 7px; height: 7px; border-radius: 50%; background: #00b894; box-shadow: 0 0 0 4px rgba(0,184,148,.12); }
+  .label { color: #527087; font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .time { color: #142a43; font-size: 12px; font-weight: 760; letter-spacing: .01em; text-align: right; white-space: nowrap; }
+  .sub { color: #6f8799; font-size: 10px; font-weight: 600; }
   @media (max-width: 460px) { .label { max-width: 145px; } .sub { display: none; } }
 </style>
 <div class="clock-shell" role="status" aria-live="polite">
@@ -224,6 +225,7 @@ def render_decision_pulse(
     active_region = max(regions, key=lambda region: int(region["load"]))
     route = "  →  ".join(region["code"] for region in regions[:3])
     ring_length = int(289 * int(event["confidence"]) / 100)
+    motion_class = "sym-risk-elevated" if event["risk"].lower() == "elevated" else "sym-risk-steady"
     signal = esc(_short_signal(event["signal"]))
     title = esc(private_value(event["title"], private_mode))
     value = esc(private_value(event["value"], private_mode))
@@ -247,17 +249,20 @@ def render_decision_pulse(
     <div class="sym-ticker-track"><span>{ticker_safe}</span><span aria-hidden="true">{ticker_safe}</span></div>
   </div>
 
-  <div class="sym-live-scene">
+  <div class="sym-live-scene {motion_class}">
     <div class="sym-scene-grid" aria-hidden="true"></div>
     <svg class="sym-flow-map" viewBox="0 0 600 280" preserveAspectRatio="none" aria-hidden="true">
       <defs>
         <linearGradient id="sym-flow-gradient" x1="0" x2="1">
-          <stop offset="0%" stop-color="#5c8dff" stop-opacity=".18" />
-          <stop offset="50%" stop-color="#7dd8ff" stop-opacity=".98" />
-          <stop offset="100%" stop-color="#42d7a1" stop-opacity=".22" />
+          <stop offset="0%" stop-color="#2f80ed" stop-opacity=".16" />
+          <stop offset="50%" stop-color="#00d2ff" stop-opacity=".96" />
+          <stop offset="100%" stop-color="#27ae89" stop-opacity=".24" />
         </linearGradient>
         <filter id="sym-glow"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
       </defs>
+      <path class="sym-ambient-wave sym-ambient-wave-a" d="M-35,86 C72,24 117,174 218,104 S348,34 442,120 S555,184 650,84" />
+      <path class="sym-ambient-wave sym-ambient-wave-b" d="M-30,185 C75,121 123,241 236,167 S379,102 479,190 S575,242 650,154" />
+      <path class="sym-ambient-wave sym-ambient-wave-c" d="M-20,144 C78,192 146,66 250,144 S378,215 492,109 S573,35 650,114" />
       <path class="sym-flow-base" d="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46" />
       <path class="sym-flow-active" d="M-20,212 C96,226 93,58 227,107 S382,248 508,92 S630,80 650,46" />
       <circle class="sym-flow-node n-one" cx="112" cy="104" r="5" />
@@ -267,6 +272,8 @@ def render_decision_pulse(
     </svg>
     <div class="sym-scene-node sym-scene-node-a"><span>LIVE</span><b>{esc(active_region["code"])}</b></div>
     <div class="sym-scene-node sym-scene-node-b"><span>SIGNALS</span><b>{event["related_signals"]}</b></div>
+    <div class="sym-orbit sym-orbit-one" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="sym-orbit sym-orbit-two" aria-hidden="true"><i></i><i></i></div>
     <div class="sym-decision-orb" style="--ring-length:{ring_length}; --world-accent:{esc(profile['accent'])}">
       <div class="sym-orb-halo"></div>
       <svg class="sym-confidence-ring" viewBox="0 0 112 112" aria-hidden="true">
