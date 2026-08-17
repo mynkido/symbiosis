@@ -609,6 +609,19 @@ def decision_telemetry(
             }
         )
 
+    # The leading edge is the live decision state, not a decorative estimate.
+    # Earlier samples create the moving formal trace; this final sample powers
+    # the latest-value tooltip and must agree exactly with the canonical model.
+    if ticker_trace:
+        ticker_trace[-1] = {
+            "risk": risk,
+            "friction": friction,
+            "trust": trust,
+            "load": operating_load,
+            "latency_ms": latency_ms,
+            "fallback": fallback_active,
+        }
+
     # A repeatable fat-tailed synthetic scenario range. This follows the
     # original board-risk idea while making its dependencies explicit here.
     base_value = _display_value_to_dollars(str(event["value"]))

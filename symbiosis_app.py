@@ -236,14 +236,8 @@ def render_brand(profile: dict[str, Any]) -> None:
     <h1 class="sym-title">Symbiosis</h1>
   </div>
 </div>
-<p class="sym-subtitle">
-  The formal decision system for consequential institutional events—now a
-  mobile-first cockpit. See evidence, uncertainty, consequence, and the
-  strongest next action before an accountable human authorizes it.
-</p>
 <div class="sym-disclosure">
-  Live operating simulation · Synthetic institutions, people, events, assets, and outcomes ·
-  Live device time and time-zone logic
+  Live decision review · Synthetic scenario · Human authorization required
 </div>
         """,
         unsafe_allow_html=True,
@@ -283,7 +277,7 @@ def render_live_simulation_canvas(
     telemetry: dict[str, Any],
     private_mode: bool,
 ) -> None:
-    """Render a mobile decision-topology sunburst from canonical frame history.
+    """Render the review-stage decision topology from canonical frame history.
 
     The browser only interpolates and draws precomputed frames. It does not
     fabricate state: sectors, automation copy, regional posture, route, and
@@ -335,8 +329,8 @@ def render_live_simulation_canvas(
   @media (prefers-reduced-motion:reduce) { *,*:before,*:after { animation:none !important; transition:none !important; } }
 </style>
 <main class="topology-shell" id="topology-shell" aria-label="Interactive decision topology">
-  <header class="topology-head"><div><div class="topology-eyebrow">Formal simulation · mobile control surface</div><div class="topology-title">Decision Topology <span>· tap a sector</span></div></div><div class="route-badge" id="route-badge"><i></i><span id="route-label"></span></div></header>
-  <section class="sunburst-stage" id="sunburst-stage"><canvas id="decision-sunburst" tabindex="0" role="button" aria-label="Animated decision topology. Tap a sector to pause and inspect it."></canvas><div class="touch-hint"><i></i><span id="touch-hint">Tap to freeze</span></div></section>
+  <header class="topology-head"><div><div class="topology-eyebrow">Review mode · decision intelligence</div><div class="topology-title">Decision Topology <span>· hover or tap a sector</span></div></div><div class="route-badge" id="route-badge"><i></i><span id="route-label"></span></div></header>
+  <section class="sunburst-stage" id="sunburst-stage"><canvas id="decision-sunburst" tabindex="0" role="button" aria-label="Animated decision topology. Hover for information or tap a sector to pause and inspect it."></canvas><div class="touch-hint"><i></i><span id="touch-hint">Hover or tap to freeze</span></div></section>
   <nav class="playback" aria-label="Simulation frame playback"><button class="frame-button" id="frame-back" type="button" aria-label="Previous frame">‹</button><button class="frame-button" id="frame-play" type="button" aria-label="Play or pause frame playback">Pause</button><button class="frame-button" id="frame-next" type="button" aria-label="Next frame">›</button><div class="frame-readout" id="frame-readout"></div><button class="frame-button live" id="frame-live" type="button">Live</button></nav>
   <section class="automation" aria-live="polite"><div class="automation-top"><div class="automation-stage" id="automation-stage"><i></i><span id="automation-stage-label"></span></div><span class="automation-state" id="automation-state"></span></div><strong class="automation-copy" id="automation-copy"></strong></section>
   <section class="sector-inspector" id="sector-inspector"><div class="inspector-top"><span class="inspector-kind" id="inspector-kind"></span><span class="inspector-score" id="inspector-score"></span></div><h3 id="inspector-title"></h3><p id="inspector-detail"></p><p id="inspector-meta"></p><small class="inspector-action" id="inspector-action"></small><small class="media-status" id="media-status"></small><a class="media-link" id="media-link" target="_blank" rel="noopener noreferrer"></a></section>
@@ -354,7 +348,7 @@ def render_live_simulation_canvas(
   const frames = model.frames || []; const branches = model.branches || []; const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const storageKey = 'symbiosis-topology:' + model.event_id;
   let canvasWidth = 1, canvasHeight = 1, ratio = 1, geometry = [], frameClock = 0, lastDraw = 0, lastClockSecond = -1, animationId = null, playing = !reducedMotion;
-  let cursor = Math.max(0, frames.length - 7); let selectedId = null; let displayed = {};
+  let cursor = Math.max(0, frames.length - 7); let selectedId = null; let hoveredId = null; let displayed = {};
   try { const stored = JSON.parse(sessionStorage.getItem(storageKey) || '{}'); if (Number.isInteger(stored.offsetFromLatest)) cursor = Math.max(0, Math.min(frames.length - 1, frames.length - 1 + stored.offsetFromLatest)); if (typeof stored.selectedId === 'string') selectedId = stored.selectedId; if (stored.paused === true) playing = false; } catch (error) { /* Storage is optional inside embedded views. */ }
   function currentFrame() { return frames[Math.max(0, Math.min(frames.length - 1, cursor))] || { metrics:{trust:0,risk:0,friction:0,operating_load:0,latency_ms:0}, route:'primary', fallback:false, narrative:{stage:'Monitoring',copy:'Simulation is preparing.'}, offset_seconds:0 }; }
   function normaliseAngle(angle) { const full = Math.PI * 2; return ((angle % full) + full) % full; }
@@ -370,24 +364,26 @@ def render_live_simulation_canvas(
   function drawAmbient(cx, cy, radius, now, fallback) { topologyContext.save(); topologyContext.lineWidth = 1; topologyContext.setLineDash([2,6]); topologyContext.strokeStyle = fallback ? 'rgba(216,87,98,.42)' : 'rgba(54,174,226,.34)'; const arcStart = now / 5000; topologyContext.beginPath(); topologyContext.arc(cx,cy,radius + 8,arcStart,arcStart + 1.25); topologyContext.stroke(); topologyContext.setLineDash([]); for (let index=0;index<8;index+=1) { const angle = arcStart * (index % 2 ? -1 : 1) + index * .78; const distance = radius + 11 + (index % 3) * 4; const opacity = .18 + .1 * (Math.sin(now/700 + index)+1); topologyContext.fillStyle = fallback ? 'rgba(216,87,98,' + opacity + ')' : 'rgba(54,174,226,' + opacity + ')'; topologyContext.beginPath(); topologyContext.arc(cx + Math.cos(angle)*distance,cy + Math.sin(angle)*distance,1.5 + (index % 2),0,Math.PI*2); topologyContext.fill(); } topologyContext.restore(); }
   function drawCanvas(now) {
     if (!frames.length) return; topologyContext.clearRect(0,0,canvasWidth,canvasHeight); const frame = currentFrame(); const shortest = Math.min(canvasWidth,canvasHeight); const cx = canvasWidth / 2; const cy = canvasHeight * .49; const sizes = {root:Math.max(34,shortest*.14),branchInner:Math.max(38,shortest*.155),branchOuter:Math.max(65,shortest*.27),childInner:Math.max(69,shortest*.285),childOuter:Math.max(101,shortest*.405),haloInner:Math.max(106,shortest*.43),haloOuter:Math.max(113,shortest*.46)}; geometry = buildGeometry(cx,cy,sizes); drawGrid(); drawAmbient(cx,cy,sizes.haloOuter,now,frame.fallback);
-    geometry.filter(entry => !entry.halo).forEach(entry => { const selected = selectedId === entry.id; const colour = stateColour(entry.item); topologyContext.save(); sectorPath(cx,cy,entry.inner,entry.outer,entry.start,entry.end); topologyContext.fillStyle = colour; topologyContext.globalAlpha = entry.item.kind === 'branch' ? .42 : .89; if (selected) { topologyContext.globalAlpha = 1; topologyContext.shadowColor = colour; topologyContext.shadowBlur = 14; } topologyContext.fill(); topologyContext.globalAlpha = selected ? .94 : .44; topologyContext.strokeStyle = '#ffffff'; topologyContext.lineWidth = selected ? 2.2 : 1.15; topologyContext.stroke(); topologyContext.restore(); });
-    geometry.filter(entry => entry.halo).forEach(entry => { const halo = entry.haloData; const target = Number(frame.metrics[halo.id] || 0); const shown = Number(displayed[halo.id] ?? target); const filled = entry.start + (entry.end-entry.start) * Math.max(.06,Math.min(1,shown/100)); topologyContext.save(); topologyContext.lineCap='round'; topologyContext.lineWidth=5; topologyContext.strokeStyle='rgba(104,142,176,.15)'; topologyContext.beginPath(); topologyContext.arc(cx,cy,(entry.inner+entry.outer)/2,entry.start,entry.end); topologyContext.stroke(); topologyContext.strokeStyle=halo.color; topologyContext.shadowColor=halo.color; topologyContext.shadowBlur=selectedId === entry.id ? 11 : 4; topologyContext.beginPath(); topologyContext.arc(cx,cy,(entry.inner+entry.outer)/2,entry.start,filled); topologyContext.stroke(); topologyContext.restore(); });
+    geometry.filter(entry => !entry.halo).forEach(entry => { const selected = selectedId === entry.id || hoveredId === entry.id; const colour = stateColour(entry.item); topologyContext.save(); sectorPath(cx,cy,entry.inner,entry.outer,entry.start,entry.end); topologyContext.fillStyle = colour; topologyContext.globalAlpha = entry.item.kind === 'branch' ? .42 : .89; if (selected) { topologyContext.globalAlpha = 1; topologyContext.shadowColor = colour; topologyContext.shadowBlur = 14; } topologyContext.fill(); topologyContext.globalAlpha = selected ? .94 : .44; topologyContext.strokeStyle = '#ffffff'; topologyContext.lineWidth = selected ? 2.2 : 1.15; topologyContext.stroke(); topologyContext.restore(); });
+    geometry.filter(entry => entry.halo).forEach(entry => { const halo = entry.haloData; const target = Number(frame.metrics[halo.id] || 0); const shown = Number(displayed[halo.id] ?? target); const filled = entry.start + (entry.end-entry.start) * Math.max(.06,Math.min(1,shown/100)); topologyContext.save(); topologyContext.lineCap='round'; topologyContext.lineWidth=5; topologyContext.strokeStyle='rgba(104,142,176,.15)'; topologyContext.beginPath(); topologyContext.arc(cx,cy,(entry.inner+entry.outer)/2,entry.start,entry.end); topologyContext.stroke(); topologyContext.strokeStyle=halo.color; topologyContext.shadowColor=halo.color; topologyContext.shadowBlur=selectedId === entry.id || hoveredId === entry.id ? 11 : 4; topologyContext.beginPath(); topologyContext.arc(cx,cy,(entry.inner+entry.outer)/2,entry.start,filled); topologyContext.stroke(); topologyContext.restore(); });
     if (frame.fallback) { const pulse = reducedMotion ? .8 : .5 + (Math.sin(now/220)+1)*.18; topologyContext.save(); topologyContext.strokeStyle='rgba(216,87,98,'+pulse+')'; topologyContext.lineWidth=2; topologyContext.setLineDash([3,5]); topologyContext.beginPath(); topologyContext.arc(cx,cy,sizes.haloOuter+5,0,Math.PI*2); topologyContext.stroke(); topologyContext.restore(); }
     topologyContext.save(); const centerGradient = topologyContext.createRadialGradient(cx-8,cy-10,2,cx,cy,sizes.root); centerGradient.addColorStop(0,'#ffffff'); centerGradient.addColorStop(1,'#e8f2fa'); topologyContext.fillStyle=centerGradient; topologyContext.shadowColor='rgba(27,75,119,.18)'; topologyContext.shadowBlur=16; topologyContext.beginPath(); topologyContext.arc(cx,cy,sizes.root,0,Math.PI*2); topologyContext.fill(); topologyContext.shadowBlur=0; topologyContext.strokeStyle=frame.fallback ? '#d85762' : '#2f80ed'; topologyContext.lineWidth=1.4; topologyContext.stroke(); topologyContext.textAlign='center'; topologyContext.fillStyle='#5d7b93'; topologyContext.font='800 6.5px Inter, sans-serif'; topologyContext.fillText('AT STAKE',cx,cy-8); topologyContext.fillStyle='#183d5d'; topologyContext.font='850 16px Inter, sans-serif'; topologyContext.fillText(model.root.value,cx,cy+7); topologyContext.fillStyle='#628096'; topologyContext.font='780 6.4px Inter, sans-serif'; topologyContext.fillText('HUMAN APPROVAL',cx,cy+18); topologyContext.restore();
     branches.forEach((branch,index) => { const angle = -Math.PI/2 + (index+.5)*(Math.PI*2/branches.length); const distance = sizes.haloOuter + 20; const labelX = cx + Math.cos(angle)*distance; const labelY = cy + Math.sin(angle)*distance + 2; topologyContext.save(); topologyContext.fillStyle=branch.color; topologyContext.font='820 7px Inter, sans-serif'; topologyContext.textAlign='center'; topologyContext.fillText(branch.label.toUpperCase(),labelX,labelY); topologyContext.restore(); });
   }
   function resizeCanvas() { const bounds=topologyCanvas.getBoundingClientRect(); ratio=Math.max(1,Math.min(2,window.devicePixelRatio || 1)); canvasWidth=Math.max(1,Math.floor(bounds.width)); canvasHeight=Math.max(1,Math.floor(bounds.height)); topologyCanvas.width=Math.floor(canvasWidth*ratio); topologyCanvas.height=Math.floor(canvasHeight*ratio); topologyContext.setTransform(ratio,0,0,ratio,0,0); drawCanvas(performance.now()); }
   function formatFocusTime() { try { const parts = new Intl.DateTimeFormat('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZone:model.focus.zone}).formatToParts(new Date()); const part = type => (parts.find(item => item.type === type) || {}).value || ''; return model.focus.code + ' ' + part('weekday').toUpperCase() + ' ' + part('hour') + ':' + part('minute') + ':' + part('second'); } catch (error) { return model.focus.code + ' live clock'; } }
-  function updateInspector() { const frame=currentFrame(); const item=itemMap[selectedId] || itemMap.hub; inspectorKind.textContent=(item.kind || 'signal').toUpperCase(); inspectorTitle.textContent=item.label || 'Decision hub'; inspectorDetail.textContent=item.detail || model.challenge; inspectorMeta.textContent=item.meta || ''; inspectorAction.textContent=item.action || ''; if (item.kind === 'metric') { const score=Math.round(Number(frame.metrics[item.metric] || 0)); inspectorScore.textContent=score + ' / 100'; inspectorMeta.textContent=(item.label || 'Signal') + ' · ' + frame.route.toUpperCase() + ' route · ' + frame.metrics.latency_ms + 'ms'; } else if (item.id === 'hub') { inspectorScore.textContent=frame.route.toUpperCase() + ' · ' + frame.metrics.latency_ms + 'ms'; } else { inspectorScore.textContent=frame.fallback && item.id === 'operations' ? 'FALLBACK' : ''; }
+  function updateInspector() { const frame=currentFrame(); const item=itemMap[hoveredId || selectedId] || itemMap.hub; inspectorKind.textContent=(hoveredId ? 'LIVE · ' : '') + (item.kind || 'signal').toUpperCase(); inspectorTitle.textContent=item.label || 'Decision hub'; inspectorDetail.textContent=item.detail || model.challenge; inspectorMeta.textContent=item.meta || ''; inspectorAction.textContent=item.action || ''; if (item.kind === 'metric') { const score=Math.round(Number(frame.metrics[item.metric] || 0)); inspectorScore.textContent=score + ' / 100'; inspectorMeta.textContent=(item.label || 'Signal') + ' · ' + frame.route.toUpperCase() + ' route · ' + frame.metrics.latency_ms + 'ms'; } else if (item.id === 'hub') { inspectorScore.textContent=frame.route.toUpperCase() + ' · ' + frame.metrics.latency_ms + 'ms'; } else { inspectorScore.textContent=frame.fallback && item.id === 'operations' ? 'FALLBACK' : ''; }
     const report=model.media_lookup.external_report; if (report && report.url && report.publisher) { mediaStatus.textContent=report.publisher + ' · ' + (report.language || 'language not supplied') + ' · ' + (report.translation_status || 'original language'); mediaLink.href=report.url; mediaLink.textContent='Open verified report ↗'; mediaLink.classList.add('show'); } else { mediaStatus.textContent=model.media_lookup.status + ' A real publisher link appears only after verified source metadata is attached.'; mediaLink.classList.remove('show'); mediaLink.removeAttribute('href'); }
   }
-  function updateUi() { const frame=currentFrame(); const offset=Number(frame.offset_seconds || 0); frameReadout.innerHTML='<b>Frame '+(cursor+1)+' / '+frames.length+'</b> · <span class="'+(offset<0?'past':'')+'">'+(offset<0?'T'+offset+'s':'LIVE')+'</span>'; const fallback=Boolean(frame.fallback); routeBadge.classList.toggle('fallback',fallback); routeLabel.textContent=fallback ? 'Fallback route' : 'Primary route'; autoStage.classList.toggle('alert',fallback); autoStageLabel.textContent=frame.narrative.stage; autoState.textContent=formatFocusTime(); autoCopy.textContent=frame.narrative.copy; topologyShell.classList.toggle('paused',!playing); touchHint.textContent=playing ? 'Tap a sector to freeze' : 'Frozen · tap another sector'; framePlay.textContent=playing ? 'Pause' : cursor < frames.length-1 ? 'Play' : 'Live'; framePlay.disabled=!playing && cursor >= frames.length-1; frameBack.disabled=cursor<=0; frameNext.disabled=cursor>=frames.length-1; updateInspector(); }
-  function setCursor(next, pause) { cursor=Math.max(0,Math.min(frames.length-1,next)); if (pause !== undefined) playing=!pause; saveState(); updateUi(); }
+  function updateUi() { const frame=currentFrame(); const offset=Number(frame.offset_seconds || 0); frameReadout.innerHTML='<b>Frame '+(cursor+1)+' / '+frames.length+'</b> · <span class="'+(offset<0?'past':'')+'">'+(offset<0?'T'+offset+'s':'LIVE')+'</span>'; const fallback=Boolean(frame.fallback); routeBadge.classList.toggle('fallback',fallback); routeLabel.textContent=fallback ? 'Fallback route' : 'Primary route'; autoStage.classList.toggle('alert',fallback); autoStageLabel.textContent=frame.narrative.stage; autoState.textContent=formatFocusTime(); autoCopy.textContent=frame.narrative.copy; topologyShell.classList.toggle('paused',!playing); touchHint.textContent=playing ? 'Hover for detail · tap to freeze' : 'Frozen · tap again to resume'; framePlay.textContent=playing ? 'Pause' : cursor < frames.length-1 ? 'Play' : 'Live'; framePlay.disabled=!playing && cursor >= frames.length-1; frameBack.disabled=cursor<=0; frameNext.disabled=cursor>=frames.length-1; updateInspector(); }
+  function setCursor(next, pause) { const wasPlaying=playing; cursor=Math.max(0,Math.min(frames.length-1,next)); if (pause !== undefined) playing=!pause; saveState(); updateUi(); drawCanvas(performance.now()); if (playing && !wasPlaying && !reducedMotion && animationId===null) { lastDraw=performance.now(); animationId=requestAnimationFrame(advance); } }
   function hitTest(clientX,clientY) { const rect=topologyCanvas.getBoundingClientRect(); const x=clientX-rect.left; const y=clientY-rect.top; const shortest=Math.min(canvasWidth,canvasHeight); const cx=canvasWidth/2,cy=canvasHeight*.49; const radius=Math.hypot(x-cx,y-cy); const angle=Math.atan2(y-cy,x-cx); if (radius <= Math.max(34,shortest*.14)) return itemMap.hub; for (let index=geometry.length-1;index>=0;index-=1) { const entry=geometry[index]; if (radius>=entry.inner && radius<=entry.outer && angleInside(angle,entry.start,entry.end)) return entry.item; } return null; }
-  function advance(now) { const frame=currentFrame(); const target=frame.metrics; ['trust','risk','friction','operating_load'].forEach(key => { const current=Number(displayed[key] ?? target[key] ?? 0); displayed[key]=current+(Number(target[key] ?? 0)-current)*.11; }); const second=Math.floor(now/1000); if (second !== lastClockSecond) { lastClockSecond=second; autoState.textContent=formatFocusTime(); } if (!lastDraw) lastDraw=now; const elapsed=Math.min(64,now-lastDraw); lastDraw=now; if (playing && !reducedMotion && cursor < frames.length-1) { frameClock+=elapsed; const dwell=Math.max(520,1250/Math.max(1,Number(model.controls.speed || 1))); if (frameClock>=dwell) { frameClock=0; cursor+=1; saveState(); updateUi(); } } drawCanvas(now); if (!reducedMotion || playing) animationId=requestAnimationFrame(advance); }
-  topologyCanvas.addEventListener('pointerdown', event => { event.preventDefault(); const item=hitTest(event.clientX,event.clientY); if (item) { selectedId=item.id; setCursor(cursor,true); } });
+  function advance(now) { animationId=null; if (!playing || reducedMotion) return; const frame=currentFrame(); const target=frame.metrics; ['trust','risk','friction','operating_load'].forEach(key => { const current=Number(displayed[key] ?? target[key] ?? 0); displayed[key]=current+(Number(target[key] ?? 0)-current)*.11; }); const second=Math.floor(now/1000); if (second !== lastClockSecond) { lastClockSecond=second; autoState.textContent=formatFocusTime(); } if (!lastDraw) lastDraw=now; const elapsed=Math.min(64,now-lastDraw); lastDraw=now; if (cursor < frames.length-1) { frameClock+=elapsed; const dwell=Math.max(520,1250/Math.max(1,Number(model.controls.speed || 1))); if (frameClock>=dwell) { frameClock=0; cursor+=1; saveState(); updateUi(); } } drawCanvas(now); if (playing) animationId=requestAnimationFrame(advance); }
+  topologyCanvas.addEventListener('pointerdown', event => { event.preventDefault(); const item=hitTest(event.clientX,event.clientY); if (item) { const resume=!playing && selectedId===item.id; selectedId=item.id; hoveredId=null; setCursor(cursor,resume ? false : true); } });
+  topologyCanvas.addEventListener('pointermove', event => { if (event.pointerType === 'touch' || !playing) return; const item=hitTest(event.clientX,event.clientY); const nextId=item ? item.id : null; if (nextId !== hoveredId) { hoveredId=nextId; updateInspector(); drawCanvas(performance.now()); } });
+  topologyCanvas.addEventListener('pointerleave', () => { if (hoveredId !== null) { hoveredId=null; updateInspector(); drawCanvas(performance.now()); } });
   topologyCanvas.addEventListener('keydown', event => { if (event.key==='Enter' || event.key===' ') { event.preventDefault(); setCursor(cursor,playing); } });
-  frameBack.addEventListener('click', () => setCursor(cursor-1,true)); frameNext.addEventListener('click', () => setCursor(cursor+1,true)); frameLive.addEventListener('click', () => setCursor(frames.length-1,true)); framePlay.addEventListener('click', () => { if (cursor<frames.length-1) { playing=!playing; saveState(); updateUi(); } });
+  frameBack.addEventListener('click', () => setCursor(cursor-1,true)); frameNext.addEventListener('click', () => setCursor(cursor+1,true)); frameLive.addEventListener('click', () => setCursor(frames.length-1,false)); framePlay.addEventListener('click', () => { if (cursor<frames.length-1) setCursor(cursor,playing); });
   new ResizeObserver(resizeCanvas).observe(topologyStage); displayed={...currentFrame().metrics}; updateUi(); resizeCanvas(); if (!reducedMotion) animationId=requestAnimationFrame(advance); else drawCanvas(performance.now());
 </script>
         """,
@@ -397,20 +393,34 @@ def render_live_simulation_canvas(
 
 
 @st.fragment(run_every="12s")
-def render_live_topology(
+def render_live_signals(
     event: dict[str, Any],
     profile: dict[str, Any],
     private_mode: bool,
     controls: dict[str, int | str],
 ) -> None:
-    """Refresh the canonical mobile frame without restarting the wider app.
+    """Refresh the canonical live ticker without restarting the wider app.
 
     The canvas owns only smooth presentation. Every twelve seconds this small
     fragment asks the shared engine for a new synthetic operating frame using
-    the real wall clock. The iframe keeps a selected sector and relative
-    position in its short rolling history in session storage, so a person
-    reviewing a frozen moment is never thrown back to the beginning.
+    the real wall clock. The ticker keeps animation view-only: the chart is
+    precomputed by the shared simulation, while hover and tap inspect it.
     """
+
+    live_now = utc_now()
+    live_regions = regional_state(profile["id"], live_now)
+    live_telemetry = decision_telemetry(event, live_regions, live_now, controls=controls)
+    render_live_signal_ticker_canvas(event, profile, live_regions, live_telemetry, private_mode)
+
+
+@st.fragment(run_every="12s")
+def render_review_topology(
+    event: dict[str, Any],
+    profile: dict[str, Any],
+    private_mode: bool,
+    controls: dict[str, int | str],
+) -> None:
+    """Make review feel like a distinct, living decision-investigation scene."""
 
     live_now = utc_now()
     live_regions = regional_state(profile["id"], live_now)
@@ -418,7 +428,7 @@ def render_live_topology(
     render_live_simulation_canvas(event, profile, live_regions, live_telemetry, private_mode)
 
 
-def _render_retired_signal_ticker(
+def render_live_signal_ticker_canvas(
     event: dict[str, Any],
     profile: dict[str, Any],
     regions: list[dict[str, Any]],
@@ -505,10 +515,10 @@ def _render_retired_signal_ticker(
 <main class="signal-ticker-shell" id="signal-ticker-shell" aria-label="Live Signals ticker view">
   <div class="signal-head">
     <div><div class="signal-kicker">Live Signals (Ticker View)</div><p class="signal-sub">Trust / Risk / Friction drift in real time. Latency spikes trigger fallback routing.</p></div>
-    <div class="signal-head-action"><span class="signal-orbit" aria-hidden="true"></span><span id="tap-state">Tap to freeze</span></div>
+    <div class="signal-head-action"><span class="signal-orbit" aria-hidden="true"></span><span id="tap-state">Hover / tap to freeze</span></div>
   </div>
   <div class="signal-tape"><div class="signal-tape-track"><span id="signal-tape-a"></span><span id="signal-tape-b" aria-hidden="true"></span></div></div>
-  <section class="chart-shell" id="chart-shell"><canvas id="signal-ticker-canvas" tabindex="0" role="button" aria-label="Animated synthetic Trust Risk Friction signal ticker. Tap to freeze and inspect."></canvas><div class="chart-legend"><span class="risk"><i></i>Risk</span><span class="friction"><i></i>Friction</span><span class="trust"><i></i>Trust</span><span class="load"><i></i>Load</span></div><div class="chart-readout" id="chart-readout"><strong id="readout-title"></strong><p id="readout-copy"></p></div><div class="chart-live-label" id="chart-live-label"><i></i><span>Primary route</span></div></section>
+  <section class="chart-shell" id="chart-shell"><canvas id="signal-ticker-canvas" tabindex="0" role="button" aria-label="Animated synthetic Trust Risk Friction signal ticker. Hover for a snapshot or tap to freeze and inspect."></canvas><div class="chart-legend"><span class="risk"><i></i>Risk</span><span class="friction"><i></i>Friction</span><span class="trust"><i></i>Trust</span><span class="load"><i></i>Load</span></div><div class="chart-readout" id="chart-readout"><strong id="readout-title"></strong><p id="readout-copy"></p></div><div class="chart-live-label" id="chart-live-label"><i></i><span>Primary route</span></div></section>
   <div class="signal-footer"><div><b id="signal-location"></b><span id="signal-footer-copy"></span></div><div class="route-state" id="route-state"><i></i><span id="route-copy"></span></div></div>
 </main>
 <script>
@@ -589,7 +599,7 @@ def _render_retired_signal_ticker(
   function pointFromEvent(event) { const rect = canvas.getBoundingClientRect(); const state = indices(); const x = Math.max(state.bounds.left, Math.min(state.bounds.right, event.clientX - rect.left)); const visibleIndex = Math.max(0, Math.min(state.visible, Math.round((x - state.bounds.left + state.fraction * state.step) / state.step))); return { sample: sampleAt(state.base + visibleIndex), x: state.bounds.left + visibleIndex * state.step - state.fraction * state.step }; }
   function stopFrame() { if (frameId !== null) { cancelAnimationFrame(frameId); frameId = null; } }
   function frame(now) { if (!lastFrame) lastFrame = now; const elapsed = Math.min(64, now - lastFrame); lastFrame = now; if (!paused && !reducedMotion) offset += elapsed / sampleMs * speed; draw(now); updateText(); if (!paused && !reducedMotion) frameId = requestAnimationFrame(frame); }
-  function setPaused(next, selection) { paused = next; shell.classList.toggle('paused', paused); tapState.textContent = paused ? 'Tap to resume' : 'Tap to freeze'; if (selection) updateReadout(selection.sample, selection.x, paused); if (paused) { stopFrame(); draw(performance.now()); } else { selected = null; selectedX = null; readout.classList.remove('show'); lastFrame = performance.now(); if (!reducedMotion) frameId = requestAnimationFrame(frame); } }
+  function setPaused(next, selection) { paused = next; shell.classList.toggle('paused', paused); tapState.textContent = paused ? 'Tap to resume' : 'Hover / tap to freeze'; if (selection) updateReadout(selection.sample, selection.x, paused); if (paused) { stopFrame(); draw(performance.now()); } else { selected = null; selectedX = null; readout.classList.remove('show'); lastFrame = performance.now(); if (!reducedMotion) frameId = requestAnimationFrame(frame); } }
   canvas.addEventListener('pointerdown', event => { event.preventDefault(); if (paused) { setPaused(false); return; } setPaused(true, pointFromEvent(event)); });
   canvas.addEventListener('pointermove', event => { if (event.pointerType === 'touch' || paused) return; hovered = true; const point = pointFromEvent(event); updateReadout(point.sample, point.x, false); draw(performance.now()); });
   canvas.addEventListener('pointerleave', () => { if (!paused) { hovered = false; selected = null; selectedX = null; readout.classList.remove('show'); draw(performance.now()); } });
@@ -1700,7 +1710,7 @@ def run() -> None:
 
     if st.session_state.sym_view == "glance":
         render_glance_header(profile)
-        render_live_topology(
+        render_live_signals(
             event,
             profile,
             st.session_state.sym_private_mode,
@@ -1723,14 +1733,20 @@ def run() -> None:
             st.rerun()
 
     render_brand(profile)
+    render_review_topology(
+        event,
+        profile,
+        st.session_state.sym_private_mode,
+        telemetry["controls"],
+    )
     regions = render_global_pulse(profile, st.session_state.sym_private_mode)
-    render_formal_signal_board(event, telemetry)
     render_event_and_recommendation(event, profile, st.session_state.sym_private_mode)
     render_evidence(event)
     render_futures(event)
     render_action_controls(event, profile, telemetry)
     render_outcome(event, st.session_state.sym_private_mode)
     render_timeline(st.session_state.sym_audit, st.session_state.sym_private_mode)
+    render_formal_signal_board(event, telemetry)
     render_analysis(event, profile, regions, telemetry)
 
     st.markdown("<div class='sym-divider'></div>", unsafe_allow_html=True)
