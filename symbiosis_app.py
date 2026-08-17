@@ -20,6 +20,13 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 import streamlit.components.v1 as components
 
+import symbiosis_engine
+
+# Cloud reruns can refresh the entry module while retaining an earlier sibling
+# module in memory. The simulation engine is pure and safe to reload; doing so
+# keeps the live view and its canonical runtime on the same deployed revision.
+importlib.reload(symbiosis_engine)
+
 from symbiosis_engine import (
     SIMULATION_PRESETS,
     active_region_label,
