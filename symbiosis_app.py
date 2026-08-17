@@ -272,6 +272,148 @@ def render_live_simulation_canvas(
     telemetry: dict[str, Any],
     private_mode: bool,
 ) -> None:
+    """Render a mobile decision-topology sunburst from canonical frame history.
+
+    The browser only interpolates and draws precomputed frames. It does not
+    fabricate state: sectors, automation copy, regional posture, route, and
+    fallback status all originate in the shared simulation engine.
+    """
+
+    sunburst = telemetry["sunburst"]
+    root = {**sunburst["root"], "value": private_value(sunburst["root"]["value"], private_mode)}
+    payload = {
+        "event_id": event["id"],
+        "world": profile["short_name"],
+        "root": root,
+        "branches": sunburst["branches"],
+        "frames": sunburst["frames"],
+        "halos": sunburst["halos"],
+        "focus": sunburst["focus"],
+        "media_lookup": sunburst["media_lookup"],
+        "routing": telemetry["routing"],
+        "controls": telemetry["controls"],
+        "challenge": event["challenge"],
+        "recommendation": event["recommendation"],
+    }
+    serialized_payload = json.dumps(payload).replace("</", "<\\/")
+
+    components.html(
+        """
+<style>
+  :root { color-scheme:light; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; overflow:hidden; background:transparent; font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  button,a { font:inherit; }
+  .topology-shell { position:relative; overflow:hidden; min-height:457px; border:1px solid rgba(38,87,150,.23); border-radius:19px; color:#173854; background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(245,250,253,.96)); box-shadow:0 16px 36px rgba(46,84,122,.13),inset 0 1px 0 rgba(255,255,255,.95); }
+  .topology-shell:before { content:""; position:absolute; inset:0; pointer-events:none; opacity:.62; background-image:linear-gradient(rgba(45,99,160,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(45,99,160,.06) 1px,transparent 1px); background-size:22px 22px; }
+  .topology-head { position:relative; z-index:3; display:flex; align-items:flex-start; justify-content:space-between; gap:9px; padding:11px 12px 8px; }
+  .topology-eyebrow { color:#366689; font-size:7.6px; font-weight:850; letter-spacing:.1em; text-transform:uppercase; }
+  .topology-title { margin:2px 0 0; color:#173854; font-size:13px; font-weight:850; letter-spacing:-.02em; }.topology-title span { color:#6690aa; font-weight:690; }
+  .route-badge { display:inline-flex; align-items:center; gap:6px; margin-top:1px; padding:5px 7px; border:1px solid rgba(31,105,147,.15); border-radius:999px; background:rgba(255,255,255,.8); color:#247a66; font-size:7.5px; font-weight:850; letter-spacing:.075em; text-transform:uppercase; white-space:nowrap; }.route-badge i { width:6px; height:6px; border-radius:50%; background:#19a878; box-shadow:0 0 0 3px rgba(25,168,120,.12); }.route-badge.fallback { color:#bd4550; }.route-badge.fallback i { background:#d85762; box-shadow:0 0 0 3px rgba(216,87,98,.15); animation:warning-pulse 1.15s ease-in-out infinite; }
+  .sunburst-stage { position:relative; z-index:1; height:276px; overflow:hidden; border-top:1px solid rgba(43,94,155,.09); border-bottom:1px solid rgba(43,94,155,.1); background:radial-gradient(circle at 50% 46%,rgba(187,224,247,.25),rgba(248,252,254,.18) 47%,rgba(233,244,252,.45)); }
+  .sunburst-stage:before { content:""; position:absolute; inset:-20% -10%; pointer-events:none; opacity:.55; background:radial-gradient(ellipse at 18% 70%,rgba(28,168,120,.09),transparent 37%),radial-gradient(ellipse at 82% 28%,rgba(69,137,238,.13),transparent 38%); animation:ambient-orbit 14s ease-in-out infinite alternate; }
+  #decision-sunburst { position:relative; z-index:1; display:block; width:100%; height:100%; outline:none; touch-action:manipulation; cursor:crosshair; }
+  #decision-sunburst:focus-visible { box-shadow:inset 0 0 0 2px rgba(47,128,237,.6); }
+  .touch-hint { position:absolute; z-index:2; right:9px; bottom:8px; display:inline-flex; align-items:center; gap:4px; color:#52768d; font-size:7.1px; font-weight:830; letter-spacing:.07em; text-transform:uppercase; pointer-events:none; }.touch-hint i { width:6px; height:6px; border-radius:50%; background:#36aee2; box-shadow:0 0 0 3px rgba(54,174,226,.1); animation:hint-breathe 2.1s ease-in-out infinite; }
+  .playback { position:relative; z-index:3; display:grid; grid-template-columns:34px 48px 34px minmax(0,1fr) 42px; align-items:center; gap:5px; padding:7px 10px; border-bottom:1px solid rgba(43,94,155,.1); background:rgba(255,255,255,.61); }.frame-button { min-height:27px; border:1px solid rgba(38,87,150,.16); border-radius:8px; color:#2b6198; background:rgba(255,255,255,.9); font-size:11px; font-weight:850; cursor:pointer; }.frame-button:active { transform:scale(.96); }.frame-button.live { color:#17806a; font-size:7px; letter-spacing:.06em; text-transform:uppercase; }.frame-button:focus-visible { outline:2px solid rgba(47,128,237,.5); outline-offset:1px; }.frame-readout { min-width:0; color:#56758c; font-size:7.6px; font-weight:780; letter-spacing:.045em; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.frame-readout b { color:#204f7c; }.frame-readout .past { color:#a67532; }
+  .automation { position:relative; z-index:2; min-height:71px; padding:9px 11px 10px; background:linear-gradient(90deg,rgba(239,249,253,.9),rgba(255,255,255,.82)); }.automation-top { display:flex; align-items:center; justify-content:space-between; gap:9px; }.automation-stage { display:inline-flex; align-items:center; gap:5px; color:#377294; font-size:7.4px; font-weight:850; letter-spacing:.09em; text-transform:uppercase; }.automation-stage i { width:6px; height:6px; border-radius:50%; background:#36aee2; box-shadow:0 0 0 3px rgba(54,174,226,.1); }.automation-stage.alert { color:#bd4550; }.automation-stage.alert i { background:#d85762; box-shadow:0 0 0 3px rgba(216,87,98,.12); animation:warning-pulse 1.15s ease-in-out infinite; }.automation-state { color:#69869b; font-size:7.2px; font-weight:760; letter-spacing:.06em; text-transform:uppercase; }.automation-copy { display:block; margin-top:4px; color:#244a68; font-size:10px; line-height:1.33; font-weight:690; }
+  .sector-inspector { position:relative; z-index:2; margin:0 9px 9px; padding:8px 9px; border:1px solid rgba(43,94,155,.14); border-radius:11px; background:rgba(255,255,255,.92); box-shadow:0 7px 18px rgba(48,86,119,.08); }.inspector-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }.inspector-kind { color:#53768e; font-size:7px; font-weight:850; letter-spacing:.085em; text-transform:uppercase; }.inspector-score { color:#2d6194; font-size:8px; font-weight:820; }.sector-inspector h3 { margin:2px 0 1px; color:#173954; font-size:11px; letter-spacing:-.014em; }.sector-inspector p { margin:0; color:#51728a; font-size:8.4px; line-height:1.35; }.inspector-action { display:block; margin-top:4px; color:#287463; font-size:7.8px; font-weight:760; }.media-status { display:block; margin-top:5px; color:#758ca0; font-size:7.2px; line-height:1.3; }.media-link { display:none; margin-top:5px; color:#2f80ed; font-size:7.4px; font-weight:830; text-decoration:none; }.media-link.show { display:inline-flex; align-items:center; gap:3px; }
+  .topology-shell.paused .route-badge i,.topology-shell.paused .touch-hint i,.topology-shell.paused .automation-stage i { animation-play-state:paused; }
+  @keyframes warning-pulse { 0%,100% { opacity:.58; transform:scale(.82); } 48% { opacity:1; transform:scale(1.35); } } @keyframes ambient-orbit { from { transform:translate3d(-2%,1%,0) scale(1); } to { transform:translate3d(2%,-2%,0) scale(1.05); } } @keyframes hint-breathe { 0%,100% { opacity:.52; transform:scale(.82); } 50% { opacity:1; transform:scale(1.24); } }
+  @media (max-width:460px) { .topology-shell { min-height:441px; border-radius:16px; }.topology-head { padding:9px 10px 7px; }.topology-title { font-size:12px; }.route-badge { padding:4px 6px; font-size:6.8px; }.sunburst-stage { height:262px; }.playback { padding:6px 8px; grid-template-columns:31px 44px 31px minmax(0,1fr) 39px; gap:4px; }.frame-button { min-height:26px; }.automation { min-height:66px; padding:8px 10px; }.automation-copy { font-size:9px; }.sector-inspector { margin:0 8px 8px; }.sector-inspector h3 { font-size:10px; } }
+  @media (prefers-reduced-motion:reduce) { *,*:before,*:after { animation:none !important; transition:none !important; } }
+</style>
+<main class="topology-shell" id="topology-shell" aria-label="Interactive decision topology">
+  <header class="topology-head"><div><div class="topology-eyebrow">Formal simulation · mobile control surface</div><div class="topology-title">Decision Topology <span>· tap a sector</span></div></div><div class="route-badge" id="route-badge"><i></i><span id="route-label"></span></div></header>
+  <section class="sunburst-stage" id="sunburst-stage"><canvas id="decision-sunburst" tabindex="0" role="button" aria-label="Animated decision topology. Tap a sector to pause and inspect it."></canvas><div class="touch-hint"><i></i><span id="touch-hint">Tap to freeze</span></div></section>
+  <nav class="playback" aria-label="Simulation frame playback"><button class="frame-button" id="frame-back" type="button" aria-label="Previous frame">‹</button><button class="frame-button" id="frame-play" type="button" aria-label="Play or pause frame playback">Pause</button><button class="frame-button" id="frame-next" type="button" aria-label="Next frame">›</button><div class="frame-readout" id="frame-readout"></div><button class="frame-button live" id="frame-live" type="button">Live</button></nav>
+  <section class="automation" aria-live="polite"><div class="automation-top"><div class="automation-stage" id="automation-stage"><i></i><span id="automation-stage-label"></span></div><span class="automation-state" id="automation-state"></span></div><strong class="automation-copy" id="automation-copy"></strong></section>
+  <section class="sector-inspector" id="sector-inspector"><div class="inspector-top"><span class="inspector-kind" id="inspector-kind"></span><span class="inspector-score" id="inspector-score"></span></div><h3 id="inspector-title"></h3><p id="inspector-detail"></p><p id="inspector-meta"></p><small class="inspector-action" id="inspector-action"></small><small class="media-status" id="media-status"></small><a class="media-link" id="media-link" target="_blank" rel="noopener noreferrer"></a></section>
+</main>
+<script>
+  const model = """ + serialized_payload + """;
+  const topologyShell = document.getElementById('topology-shell');
+  const topologyCanvas = document.getElementById('decision-sunburst');
+  const topologyContext = topologyCanvas.getContext('2d');
+  const topologyStage = document.getElementById('sunburst-stage');
+  const frameBack = document.getElementById('frame-back'); const framePlay = document.getElementById('frame-play'); const frameNext = document.getElementById('frame-next'); const frameLive = document.getElementById('frame-live');
+  const frameReadout = document.getElementById('frame-readout'); const routeBadge = document.getElementById('route-badge'); const routeLabel = document.getElementById('route-label'); const touchHint = document.getElementById('touch-hint');
+  const autoStage = document.getElementById('automation-stage'); const autoStageLabel = document.getElementById('automation-stage-label'); const autoState = document.getElementById('automation-state'); const autoCopy = document.getElementById('automation-copy');
+  const inspectorKind = document.getElementById('inspector-kind'); const inspectorScore = document.getElementById('inspector-score'); const inspectorTitle = document.getElementById('inspector-title'); const inspectorDetail = document.getElementById('inspector-detail'); const inspectorMeta = document.getElementById('inspector-meta'); const inspectorAction = document.getElementById('inspector-action'); const mediaStatus = document.getElementById('media-status'); const mediaLink = document.getElementById('media-link');
+  const frames = model.frames || []; const branches = model.branches || []; const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const storageKey = 'symbiosis-topology:' + model.event_id;
+  let canvasWidth = 1, canvasHeight = 1, ratio = 1, geometry = [], frameClock = 0, lastDraw = 0, lastClockSecond = -1, animationId = null, playing = !reducedMotion;
+  let cursor = Math.max(0, frames.length - 7); let selectedId = null; let displayed = {};
+  try { const stored = JSON.parse(sessionStorage.getItem(storageKey) || '{}'); if (Number.isInteger(stored.offsetFromLatest)) cursor = Math.max(0, Math.min(frames.length - 1, frames.length - 1 + stored.offsetFromLatest)); if (typeof stored.selectedId === 'string') selectedId = stored.selectedId; if (stored.paused === true) playing = false; } catch (error) { /* Storage is optional inside embedded views. */ }
+  function currentFrame() { return frames[Math.max(0, Math.min(frames.length - 1, cursor))] || { metrics:{trust:0,risk:0,friction:0,operating_load:0,latency_ms:0}, route:'primary', fallback:false, narrative:{stage:'Monitoring',copy:'Simulation is preparing.'}, offset_seconds:0 }; }
+  function normaliseAngle(angle) { const full = Math.PI * 2; return ((angle % full) + full) % full; }
+  function angleInside(angle, start, end) { const value = normaliseAngle(angle); const begin = normaliseAngle(start); const finish = normaliseAngle(end); return begin <= finish ? value >= begin && value <= finish : value >= begin || value <= finish; }
+  function stateColour(item) { if (item.kind === 'evidence') return item.tone === 'verified' ? '#18a878' : item.tone === 'conflicting' ? '#d85762' : '#e0a23a'; if (item.kind === 'region') return item.tone === 'fast' ? '#36aee2' : item.tone === 'ambient' ? '#4389d7' : '#8aa6bd'; if (item.kind === 'option') return item.tone === 'recommended' ? '#356de0' : item.tone === 'risk' ? '#d85762' : '#d49a37'; return item.color || '#2f80ed'; }
+  function allItems() { const items = [{id:'hub',kind:'hub',label:'Decision hub',headline:model.root.approval,detail:model.challenge,meta:model.root.value + ' at stake · ' + model.root.route + ' route',action:'The topology recommends and explains. It does not execute action.'}]; branches.forEach(branch => { items.push(branch); branch.children.forEach(child => items.push(child)); }); model.halos.forEach(halo => items.push({id:'metric-' + halo.id,kind:'metric',label:halo.label,headline:halo.label + ' signal',detail:'Current canonical simulation score.',meta:'',action:'This halo follows the current saved simulation frame.',metric:halo.id,color:halo.color})); return items; }
+  const itemMap = Object.fromEntries(allItems().map(item => [item.id,item]));
+  if (!selectedId || !itemMap[selectedId]) { const missing = branches.flatMap(branch => branch.children).find(item => item.kind === 'evidence' && item.tone === 'missing'); selectedId = missing ? missing.id : branches[0].id; }
+  function saveState() { try { sessionStorage.setItem(storageKey, JSON.stringify({offsetFromLatest:cursor - (frames.length - 1),selectedId:selectedId,paused:!playing})); } catch (error) { /* Storage is optional. */ } }
+  function sectorPath(cx, cy, inner, outer, start, end) { topologyContext.beginPath(); topologyContext.arc(cx,cy,outer,start,end); topologyContext.arc(cx,cy,inner,end,start,true); topologyContext.closePath(); }
+  function drawGrid() { topologyContext.save(); topologyContext.strokeStyle = 'rgba(45,99,160,.075)'; topologyContext.lineWidth = 1; const gap = 21; for (let x=0;x<=canvasWidth;x+=gap) { topologyContext.beginPath(); topologyContext.moveTo(x,0); topologyContext.lineTo(x,canvasHeight); topologyContext.stroke(); } for (let y=0;y<=canvasHeight;y+=gap) { topologyContext.beginPath(); topologyContext.moveTo(0,y); topologyContext.lineTo(canvasWidth,y); topologyContext.stroke(); } topologyContext.restore(); }
+  function buildGeometry(cx, cy, sizes) { const entries = []; const branchGap = .024; const startBase = -Math.PI / 2; const branchSpan = (Math.PI * 2) / Math.max(1, branches.length); branches.forEach((branch, branchIndex) => { const start = startBase + branchIndex * branchSpan + branchGap; const end = startBase + (branchIndex + 1) * branchSpan - branchGap; entries.push({id:branch.id,item:branch,start:start,end:end,inner:sizes.branchInner,outer:sizes.branchOuter}); const total = branch.children.reduce((sum,child) => sum + Number(child.weight || 1),0); let childStart = start + .012; branch.children.forEach(child => { const childSpan = (end - start - .024) * Number(child.weight || 1) / total; const childEnd = childStart + childSpan - .009; entries.push({id:child.id,item:child,start:childStart,end:childEnd,inner:sizes.childInner,outer:sizes.childOuter}); childStart += childSpan; }); }); model.halos.forEach((halo, index) => { const span = (Math.PI * 2) / model.halos.length; entries.push({id:'metric-' + halo.id,item:itemMap['metric-' + halo.id],start:startBase + index * span + .025,end:startBase + (index + 1) * span - .025,inner:sizes.haloInner,outer:sizes.haloOuter,halo:true,haloData:halo}); }); return entries; }
+  function drawAmbient(cx, cy, radius, now, fallback) { topologyContext.save(); topologyContext.lineWidth = 1; topologyContext.setLineDash([2,6]); topologyContext.strokeStyle = fallback ? 'rgba(216,87,98,.42)' : 'rgba(54,174,226,.34)'; const arcStart = now / 5000; topologyContext.beginPath(); topologyContext.arc(cx,cy,radius + 8,arcStart,arcStart + 1.25); topologyContext.stroke(); topologyContext.setLineDash([]); for (let index=0;index<8;index+=1) { const angle = arcStart * (index % 2 ? -1 : 1) + index * .78; const distance = radius + 11 + (index % 3) * 4; const opacity = .18 + .1 * (Math.sin(now/700 + index)+1); topologyContext.fillStyle = fallback ? 'rgba(216,87,98,' + opacity + ')' : 'rgba(54,174,226,' + opacity + ')'; topologyContext.beginPath(); topologyContext.arc(cx + Math.cos(angle)*distance,cy + Math.sin(angle)*distance,1.5 + (index % 2),0,Math.PI*2); topologyContext.fill(); } topologyContext.restore(); }
+  function drawCanvas(now) {
+    if (!frames.length) return; topologyContext.clearRect(0,0,canvasWidth,canvasHeight); const frame = currentFrame(); const shortest = Math.min(canvasWidth,canvasHeight); const cx = canvasWidth / 2; const cy = canvasHeight * .49; const sizes = {root:Math.max(34,shortest*.14),branchInner:Math.max(38,shortest*.155),branchOuter:Math.max(65,shortest*.27),childInner:Math.max(69,shortest*.285),childOuter:Math.max(101,shortest*.405),haloInner:Math.max(106,shortest*.43),haloOuter:Math.max(113,shortest*.46)}; geometry = buildGeometry(cx,cy,sizes); drawGrid(); drawAmbient(cx,cy,sizes.haloOuter,now,frame.fallback);
+    geometry.filter(entry => !entry.halo).forEach(entry => { const selected = selectedId === entry.id; const colour = stateColour(entry.item); topologyContext.save(); sectorPath(cx,cy,entry.inner,entry.outer,entry.start,entry.end); topologyContext.fillStyle = colour; topologyContext.globalAlpha = entry.item.kind === 'branch' ? .42 : .89; if (selected) { topologyContext.globalAlpha = 1; topologyContext.shadowColor = colour; topologyContext.shadowBlur = 14; } topologyContext.fill(); topologyContext.globalAlpha = selected ? .94 : .44; topologyContext.strokeStyle = '#ffffff'; topologyContext.lineWidth = selected ? 2.2 : 1.15; topologyContext.stroke(); topologyContext.restore(); });
+    geometry.filter(entry => entry.halo).forEach(entry => { const halo = entry.haloData; const target = Number(frame.metrics[halo.id] || 0); const shown = Number(displayed[halo.id] ?? target); const filled = entry.start + (entry.end-entry.start) * Math.max(.06,Math.min(1,shown/100)); topologyContext.save(); topologyContext.lineCap='round'; topologyContext.lineWidth=5; topologyContext.strokeStyle='rgba(104,142,176,.15)'; topologyContext.beginPath(); topologyContext.arc(cx,cy,(entry.inner+entry.outer)/2,entry.start,entry.end); topologyContext.stroke(); topologyContext.strokeStyle=halo.color; topologyContext.shadowColor=halo.color; topologyContext.shadowBlur=selectedId === entry.id ? 11 : 4; topologyContext.beginPath(); topologyContext.arc(cx,cy,(entry.inner+entry.outer)/2,entry.start,filled); topologyContext.stroke(); topologyContext.restore(); });
+    if (frame.fallback) { const pulse = reducedMotion ? .8 : .5 + (Math.sin(now/220)+1)*.18; topologyContext.save(); topologyContext.strokeStyle='rgba(216,87,98,'+pulse+')'; topologyContext.lineWidth=2; topologyContext.setLineDash([3,5]); topologyContext.beginPath(); topologyContext.arc(cx,cy,sizes.haloOuter+5,0,Math.PI*2); topologyContext.stroke(); topologyContext.restore(); }
+    topologyContext.save(); const centerGradient = topologyContext.createRadialGradient(cx-8,cy-10,2,cx,cy,sizes.root); centerGradient.addColorStop(0,'#ffffff'); centerGradient.addColorStop(1,'#e8f2fa'); topologyContext.fillStyle=centerGradient; topologyContext.shadowColor='rgba(27,75,119,.18)'; topologyContext.shadowBlur=16; topologyContext.beginPath(); topologyContext.arc(cx,cy,sizes.root,0,Math.PI*2); topologyContext.fill(); topologyContext.shadowBlur=0; topologyContext.strokeStyle=frame.fallback ? '#d85762' : '#2f80ed'; topologyContext.lineWidth=1.4; topologyContext.stroke(); topologyContext.textAlign='center'; topologyContext.fillStyle='#5d7b93'; topologyContext.font='800 6.5px Inter, sans-serif'; topologyContext.fillText('AT STAKE',cx,cy-8); topologyContext.fillStyle='#183d5d'; topologyContext.font='850 16px Inter, sans-serif'; topologyContext.fillText(model.root.value,cx,cy+7); topologyContext.fillStyle='#628096'; topologyContext.font='780 6.4px Inter, sans-serif'; topologyContext.fillText('HUMAN APPROVAL',cx,cy+18); topologyContext.restore();
+    branches.forEach((branch,index) => { const angle = -Math.PI/2 + (index+.5)*(Math.PI*2/branches.length); const distance = sizes.haloOuter + 20; const labelX = cx + Math.cos(angle)*distance; const labelY = cy + Math.sin(angle)*distance + 2; topologyContext.save(); topologyContext.fillStyle=branch.color; topologyContext.font='820 7px Inter, sans-serif'; topologyContext.textAlign='center'; topologyContext.fillText(branch.label.toUpperCase(),labelX,labelY); topologyContext.restore(); });
+  }
+  function resizeCanvas() { const bounds=topologyCanvas.getBoundingClientRect(); ratio=Math.max(1,Math.min(2,window.devicePixelRatio || 1)); canvasWidth=Math.max(1,Math.floor(bounds.width)); canvasHeight=Math.max(1,Math.floor(bounds.height)); topologyCanvas.width=Math.floor(canvasWidth*ratio); topologyCanvas.height=Math.floor(canvasHeight*ratio); topologyContext.setTransform(ratio,0,0,ratio,0,0); drawCanvas(performance.now()); }
+  function formatFocusTime() { try { const parts = new Intl.DateTimeFormat('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZone:model.focus.zone}).formatToParts(new Date()); const part = type => (parts.find(item => item.type === type) || {}).value || ''; return model.focus.code + ' ' + part('weekday').toUpperCase() + ' ' + part('hour') + ':' + part('minute') + ':' + part('second'); } catch (error) { return model.focus.code + ' live clock'; } }
+  function updateInspector() { const frame=currentFrame(); const item=itemMap[selectedId] || itemMap.hub; inspectorKind.textContent=(item.kind || 'signal').toUpperCase(); inspectorTitle.textContent=item.label || 'Decision hub'; inspectorDetail.textContent=item.detail || model.challenge; inspectorMeta.textContent=item.meta || ''; inspectorAction.textContent=item.action || ''; if (item.kind === 'metric') { const score=Math.round(Number(frame.metrics[item.metric] || 0)); inspectorScore.textContent=score + ' / 100'; inspectorMeta.textContent=(item.label || 'Signal') + ' · ' + frame.route.toUpperCase() + ' route · ' + frame.metrics.latency_ms + 'ms'; } else if (item.id === 'hub') { inspectorScore.textContent=frame.route.toUpperCase() + ' · ' + frame.metrics.latency_ms + 'ms'; } else { inspectorScore.textContent=frame.fallback && item.id === 'operations' ? 'FALLBACK' : ''; }
+    const report=model.media_lookup.external_report; if (report && report.url && report.publisher) { mediaStatus.textContent=report.publisher + ' · ' + (report.language || 'language not supplied') + ' · ' + (report.translation_status || 'original language'); mediaLink.href=report.url; mediaLink.textContent='Open verified report ↗'; mediaLink.classList.add('show'); } else { mediaStatus.textContent=model.media_lookup.status + ' A real publisher link appears only after verified source metadata is attached.'; mediaLink.classList.remove('show'); mediaLink.removeAttribute('href'); }
+  }
+  function updateUi() { const frame=currentFrame(); const offset=Number(frame.offset_seconds || 0); frameReadout.innerHTML='<b>Frame '+(cursor+1)+' / '+frames.length+'</b> · <span class="'+(offset<0?'past':'')+'">'+(offset<0?'T'+offset+'s':'LIVE')+'</span>'; const fallback=Boolean(frame.fallback); routeBadge.classList.toggle('fallback',fallback); routeLabel.textContent=fallback ? 'Fallback route' : 'Primary route'; autoStage.classList.toggle('alert',fallback); autoStageLabel.textContent=frame.narrative.stage; autoState.textContent=formatFocusTime(); autoCopy.textContent=frame.narrative.copy; topologyShell.classList.toggle('paused',!playing); touchHint.textContent=playing ? 'Tap a sector to freeze' : 'Frozen · tap another sector'; framePlay.textContent=playing ? 'Pause' : cursor < frames.length-1 ? 'Play' : 'Live'; framePlay.disabled=!playing && cursor >= frames.length-1; frameBack.disabled=cursor<=0; frameNext.disabled=cursor>=frames.length-1; updateInspector(); }
+  function setCursor(next, pause) { cursor=Math.max(0,Math.min(frames.length-1,next)); if (pause !== undefined) playing=!pause; saveState(); updateUi(); }
+  function hitTest(clientX,clientY) { const rect=topologyCanvas.getBoundingClientRect(); const x=clientX-rect.left; const y=clientY-rect.top; const shortest=Math.min(canvasWidth,canvasHeight); const cx=canvasWidth/2,cy=canvasHeight*.49; const radius=Math.hypot(x-cx,y-cy); const angle=Math.atan2(y-cy,x-cx); if (radius <= Math.max(34,shortest*.14)) return itemMap.hub; for (let index=geometry.length-1;index>=0;index-=1) { const entry=geometry[index]; if (radius>=entry.inner && radius<=entry.outer && angleInside(angle,entry.start,entry.end)) return entry.item; } return null; }
+  function advance(now) { const frame=currentFrame(); const target=frame.metrics; ['trust','risk','friction','operating_load'].forEach(key => { const current=Number(displayed[key] ?? target[key] ?? 0); displayed[key]=current+(Number(target[key] ?? 0)-current)*.11; }); const second=Math.floor(now/1000); if (second !== lastClockSecond) { lastClockSecond=second; autoState.textContent=formatFocusTime(); } if (!lastDraw) lastDraw=now; const elapsed=Math.min(64,now-lastDraw); lastDraw=now; if (playing && !reducedMotion && cursor < frames.length-1) { frameClock+=elapsed; const dwell=Math.max(520,1250/Math.max(1,Number(model.controls.speed || 1))); if (frameClock>=dwell) { frameClock=0; cursor+=1; saveState(); updateUi(); } } drawCanvas(now); if (!reducedMotion || playing) animationId=requestAnimationFrame(advance); }
+  topologyCanvas.addEventListener('pointerdown', event => { event.preventDefault(); const item=hitTest(event.clientX,event.clientY); if (item) { selectedId=item.id; setCursor(cursor,true); } });
+  topologyCanvas.addEventListener('keydown', event => { if (event.key==='Enter' || event.key===' ') { event.preventDefault(); setCursor(cursor,playing); } });
+  frameBack.addEventListener('click', () => setCursor(cursor-1,true)); frameNext.addEventListener('click', () => setCursor(cursor+1,true)); frameLive.addEventListener('click', () => setCursor(frames.length-1,true)); framePlay.addEventListener('click', () => { if (cursor<frames.length-1) { playing=!playing; saveState(); updateUi(); } });
+  new ResizeObserver(resizeCanvas).observe(topologyStage); displayed={...currentFrame().metrics}; updateUi(); resizeCanvas(); if (!reducedMotion) animationId=requestAnimationFrame(advance); else drawCanvas(performance.now());
+</script>
+        """,
+        height=458,
+        scrolling=False,
+    )
+
+
+@st.fragment(run_every="12s")
+def render_live_topology(
+    event: dict[str, Any],
+    profile: dict[str, Any],
+    private_mode: bool,
+    controls: dict[str, int | str],
+) -> None:
+    """Refresh the canonical mobile frame without restarting the wider app.
+
+    The canvas owns only smooth presentation. Every twelve seconds this small
+    fragment asks the shared engine for a new synthetic operating frame using
+    the real wall clock. The iframe keeps a selected sector and relative
+    position in its short rolling history in session storage, so a person
+    reviewing a frozen moment is never thrown back to the beginning.
+    """
+
+    live_now = utc_now()
+    live_regions = regional_state(profile["id"], live_now)
+    live_telemetry = decision_telemetry(event, live_regions, live_now, controls=controls)
+    render_live_simulation_canvas(event, profile, live_regions, live_telemetry, private_mode)
+
+
+def _render_retired_signal_ticker(
+    event: dict[str, Any],
+    profile: dict[str, Any],
+    regions: list[dict[str, Any]],
+    telemetry: dict[str, Any],
+    private_mode: bool,
+) -> None:
     """Render the original formal signal ticker as the live mobile surface.
 
     Canvas movement is deliberately view-only: every plotted sample, threshold,
@@ -1488,7 +1630,12 @@ def run() -> None:
 
     if st.session_state.sym_view == "glance":
         render_glance_header(profile)
-        render_live_simulation_canvas(event, profile, regions, telemetry, st.session_state.sym_private_mode)
+        render_live_topology(
+            event,
+            profile,
+            st.session_state.sym_private_mode,
+            telemetry["controls"],
+        )
         render_simulation_tuner(telemetry)
         render_decision_pulse(event, telemetry, st.session_state.sym_private_mode)
         render_glance_controls(event)

@@ -13,6 +13,7 @@ import math
 import random
 import re
 from typing import Any
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from symbiosis_profiles import REGIONS, WORLD_PROFILES
@@ -42,7 +43,11 @@ def regional_state(world_id: str, now: datetime | None = None) -> list[dict[str,
     now = now or utc_now()
     is_digital = world_id == "axiom"
     results: list[dict[str, Any]] = []
-    time_bucket = now.strftime("%Y-%m-%d-%H-%M")[:15]
+    # A synthetic operating tick lasts twelve seconds. The wall clock and
+    # regional calendar are factual; only the derived workload is fictional.
+    # That gives the live view fresh canonical frames without resorting to
+    # browser-side random motion.
+    time_bucket = f"{now.strftime('%Y-%m-%d-%H-%M')}:{now.second // 12}"
 
     for region in REGIONS:
         local = now.astimezone(ZoneInfo(region["zone"]))
@@ -206,6 +211,278 @@ def simulation_controls(controls: dict[str, Any] | None = None) -> dict[str, int
     }
 
 
+def _sunburst_impact_weight(impact: str) -> int:
+    """Return a visual relevance weight; it is not a probability claim."""
+
+    lowered = impact.lower()
+    if "decision" in lowered or "critical" in lowered:
+        return 42
+    if "exposure" in lowered or "risk" in lowered:
+        return 33
+    if "support" in lowered or "protect" in lowered:
+        return 25
+    return 28
+
+
+_VERIFIED_REPORT_DOMAINS = {
+    "Bloomberg": ("bloomberg.com",),
+    "CNBC": ("cnbc.com",),
+    "Financial Times": ("ft.com",),
+    "Reuters": ("reuters.com",),
+    "The Wall Street Journal": ("wsj.com",),
+    "Nikkei Asia": ("asia.nikkei.com", "nikkei.com"),
+}
+
+
+def _validated_external_report(candidate: Any) -> dict[str, str] | None:
+    """Accept only a connector-attached, allow-listed external report.
+
+    A recognisable media brand alone is not enough. A production connector
+    must declare its match provenance and translation treatment; otherwise a
+    fictional case could be made to look factually reported. The beta has no
+    connector, so this returns ``None`` for every bundled scenario.
+    """
+
+    if not isinstance(candidate, dict) or candidate.get("verified_publisher") is not True:
+        return None
+    required = (
+        "publisher",
+        "canonical_url",
+        "headline",
+        "published_at",
+        "fetched_at",
+        "language",
+        "english_title",
+        "translation_type",
+        "match_provenance",
+    )
+    if any(not str(candidate.get(field, "")).strip() for field in required):
+        return None
+    publisher = str(candidate["publisher"])
+    allowed_domains = _VERIFIED_REPORT_DOMAINS.get(publisher)
+    parsed = urlparse(str(candidate["canonical_url"]))
+    hostname = (parsed.hostname or "").lower()
+    if (
+        not allowed_domains
+        or parsed.scheme != "https"
+        or not any(hostname == domain or hostname.endswith(f".{domain}") for domain in allowed_domains)
+    ):
+        return None
+    translation_type = str(candidate["translation_type"])
+    if translation_type not in {
+        "original language",
+        "publisher translation",
+        "licensed translation",
+        "machine-assisted English translation",
+    }:
+        return None
+    return {
+        "publisher": publisher,
+        "url": str(candidate["canonical_url"]),
+        "headline": str(candidate["headline"]),
+        "published_at": str(candidate["published_at"]),
+        "fetched_at": str(candidate["fetched_at"]),
+        "language": str(candidate["language"]),
+        "english_title": str(candidate["english_title"]),
+        "translation_status": translation_type,
+        "match_provenance": str(candidate["match_provenance"]),
+    }
+
+
+def _sunburst_payload(
+    event: dict[str, Any],
+    regions: list[dict[str, Any]],
+    metrics: dict[str, Any],
+    routing: dict[str, Any],
+    trace: list[dict[str, Any]],
+    controls: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a touch-first decision topology from the canonical simulation.
+
+    Sector width communicates decision relevance, operating load, or option
+    confidence as explicitly labelled—not a fabricated likelihood. Every
+    description is derived from the synthetic scenario and live regional clock
+    data already used elsewhere in the product.
+    """
+
+    motion_rank = {"fast": 3, "ambient": 2, "still": 1}
+    focus = max(regions, key=lambda region: (motion_rank[region["motion_mode"]], int(region["load"])))
+    evidence = event["evidence"]
+    verified = sum(item["state"] == "verified" for item in evidence)
+    conflicting = sum(item["state"] == "conflicting" for item in evidence)
+    missing = sum(item["state"] == "missing" for item in evidence)
+    challenge = event["challenge"].split(".", maxsplit=1)[0].strip()
+
+    evidence_children: list[dict[str, Any]] = []
+    for index, item in enumerate(evidence):
+        evidence_children.append(
+            {
+                "id": f"evidence-{index}",
+                "kind": "evidence",
+                "label": item["source"],
+                "tone": item["state"],
+                "weight": _sunburst_impact_weight(item["impact"]),
+                "headline": f"{item['state'].title()} evidence",
+                "detail": item["claim"],
+                "meta": f"{item['recency']} · {item['reliability']} reliability · {item['impact']}",
+                "action": "Keep this evidence visible during human authorization.",
+            }
+        )
+
+    operation_children: list[dict[str, Any]] = []
+    for region in sorted(regions, key=lambda item: int(item["load"]), reverse=True):
+        operation_children.append(
+            {
+                "id": f"region-{region['code'].lower()}",
+                "kind": "region",
+                "label": f"{region['city']} · {region['code']}",
+                "tone": region["motion_mode"],
+                "weight": max(14, int(region["load"])),
+                "headline": region["status"],
+                "detail": f"{region['day']} {region['time']} · {region['posture']}",
+                "meta": f"{region['load']}% synthetic load · {region['zone']}",
+                "action": "This local operating posture is recalculated from the live clock.",
+            }
+        )
+
+    option_children: list[dict[str, Any]] = []
+    for option in event["options"]:
+        option_children.append(
+            {
+                "id": f"option-{option['key']}",
+                "kind": "option",
+                "label": option["label"],
+                "tone": option["tone"],
+                "weight": max(18, int(option["confidence"])),
+                "headline": "Recommended path" if option["tone"] == "recommended" else "Available path",
+                "detail": option["summary"],
+                "meta": f"Could protect: {option['protect']} · Could expose: {option['expose']}",
+                "action": "Review this comparison; an accountable human still authorizes the action.",
+            }
+        )
+
+    branches = [
+        {
+            "id": "evidence",
+            "kind": "branch",
+            "label": "Evidence",
+            "color": "#18a878",
+            "weight": 1,
+            "headline": f"{verified} verified · {conflicting} conflicting · {missing} missing",
+            "detail": "Evidence is synthesised before the recommendation is staged.",
+            "meta": "Tap a sector to inspect provenance and relevance.",
+            "action": "Human authorization retains unresolved evidence.",
+            "children": evidence_children,
+        },
+        {
+            "id": "operations",
+            "kind": "branch",
+            "label": "Operations",
+            "color": "#36aee2",
+            "weight": 1,
+            "headline": f"{focus['code']} · {focus['status']}",
+            "detail": f"{focus['city']} is the highest-active synthetic operating region.",
+            "meta": f"Latency {routing['latency_ms']}ms · {routing['route']} route",
+            "action": routing["reason"],
+            "children": operation_children,
+        },
+        {
+            "id": "decision-paths",
+            "kind": "branch",
+            "label": "Decision paths",
+            "color": "#be8b26",
+            "weight": 1,
+            "headline": event["recommendation"],
+            "detail": "Symbiosis compares available paths; it never executes one.",
+            "meta": f"{event['window']} · {event['queue_position']} in queue",
+            "action": "The machine recommends. An accountable human authorizes.",
+            "children": option_children,
+        },
+    ]
+    topic_lookup = {
+        "axiom": "institutional digital assets regulation liquidity",
+        "northstar": "payments operations risk regulation",
+        "asterion": "investment operations market risk governance",
+    }
+    history = trace[-24:]
+    automation: list[dict[str, str]] = [
+        {
+            "stage": "Evidence synthesis",
+            "copy": f"{verified} verified · {conflicting} conflicting · {missing} missing evidence signal{'s' if len(evidence) != 1 else ''}.",
+        },
+        {
+            "stage": "Operating check",
+            "copy": f"{focus['code']} {focus['day']} {focus['time']} · {focus['load']}% synthetic load · {focus['posture']}.",
+        },
+        {
+            "stage": "Routing",
+            "copy": routing["reason"],
+        },
+        {
+            "stage": "Recommendation staged",
+            "copy": f"{event['recommendation']} · human approval pending.",
+        },
+        {
+            "stage": "Challenge watch",
+            "copy": challenge or "The decision challenge remains visible for accountable review.",
+        },
+    ]
+    frames: list[dict[str, Any]] = []
+    for index, point in enumerate(history):
+        frame_routing = str(point.get("route", "primary"))
+        frame_fallback = bool(point.get("fallback", False))
+        frame_latency = int(point.get("latency_ms", metrics["latency_ms"]))
+        narrative = automation[index % len(automation)]
+        if frame_fallback:
+            narrative = {
+                "stage": "Fallback routing",
+                "copy": f"Latency {frame_latency}ms crosses the {controls['latency_threshold']}ms threshold; synthetic fallback routing is engaged.",
+            }
+        frames.append(
+            {
+                "id": f"frame-{index:02d}",
+                "offset_seconds": (index - len(history) + 1) * 2,
+                "metrics": {
+                    "trust": int(point["trust"]),
+                    "risk": int(point["risk"]),
+                    "friction": int(point["friction"]),
+                    "operating_load": int(point["load"]),
+                    "latency_ms": frame_latency,
+                },
+                "route": frame_routing,
+                "fallback": frame_fallback,
+                "narrative": narrative,
+            }
+        )
+
+    return {
+        "root": {
+            "label": event["title"],
+            "value": event["value"],
+            "route": routing["route"],
+            "approval": "Human approval pending",
+        },
+        "branches": branches,
+        "frames": frames,
+        "halos": [
+            {"id": "trust", "label": "Trust", "color": "#18a878", "value": metrics["trust"]},
+            {"id": "risk", "label": "Risk", "color": "#d85762", "value": metrics["risk"]},
+            {"id": "friction", "label": "Friction", "color": "#2459b6", "value": metrics["friction"]},
+            {"id": "operating_load", "label": "Load", "color": "#36aee2", "value": metrics["operating_load"]},
+        ],
+        "focus": {
+            "code": focus["code"],
+            "city": focus["city"],
+            "zone": focus["zone"],
+        },
+        "media_lookup": {
+            "query": topic_lookup[event["world_id"]],
+            "status": "No verified external report attached — synthetic scenario.",
+            "external_report": _validated_external_report(event.get("external_report")),
+        },
+    }
+
+
 def decision_telemetry(
     event: dict[str, Any],
     regions: list[dict[str, Any]],
@@ -232,15 +509,19 @@ def decision_telemetry(
 
     risk_bias = int(control_state["risk_bias"])
     friction_bias = int(control_state["friction_bias"])
+    simulation_epoch = int(now.timestamp() // 12)
+    trust_drift = deterministic_int(f"{event['id']}:trust:{simulation_epoch}", -2, 2)
+    risk_drift = deterministic_int(f"{event['id']}:risk:{simulation_epoch}", -2, 2)
+    friction_drift = deterministic_int(f"{event['id']}:friction:{simulation_epoch}", -2, 2)
     trust = _bounded(
         int(event["confidence"]) + (verified * 3) - (conflicting * 4) - (missing * 6)
-        - max(0, risk_bias) * .28 - max(0, friction_bias) * .16,
+        - max(0, risk_bias) * .28 - max(0, friction_bias) * .16 + trust_drift,
         8,
         96,
     )
-    risk = _bounded(risk_base + (conflicting * 3) + (missing * 4) - (verified * 2) + risk_bias, 8, 96)
+    risk = _bounded(risk_base + (conflicting * 3) + (missing * 4) - (verified * 2) + risk_bias + risk_drift, 8, 96)
     friction = _bounded(
-        20 + (conflicting * 11) + (missing * 17) + max(0, 70 - int(event["confidence"])) * .22 + friction_bias,
+        20 + (conflicting * 11) + (missing * 17) + max(0, 70 - int(event["confidence"])) * .22 + friction_bias + friction_drift,
         8,
         94,
     )
@@ -262,10 +543,10 @@ def decision_telemetry(
         "latency_threshold": int(control_state["latency_threshold"]),
     }
 
-    # The trace is stable for a decision, then makes a small deterministic
-    # minute-level adjustment. That produces live-looking movement without
-    # inventing a second, view-only source of truth.
-    phase = deterministic_int(f"{event['id']}:phase", 0, 20) + now.minute
+    # The trace receives a small, deterministic twelve-second adjustment.
+    # It remains replayable from the event, controls, and timestamp while
+    # giving the mobile topology a real canonical operating cadence.
+    phase = deterministic_int(f"{event['id']}:phase", 0, 20) + now.minute * 5 + now.second // 12
     trace: list[dict[str, int | bool | str]] = []
     trace_points = max(16, points)
     for index in range(trace_points):
@@ -355,22 +636,26 @@ def decision_telemetry(
         bucket = max(0, min(bucket_count - 1, int((sample - low) / step)))
         histogram[bucket] += 1
 
+    routing_state = {
+        "route": routing,
+        "fallback_active": fallback_active,
+        "latency_ms": latency_ms,
+        "threshold_ms": int(control_state["latency_threshold"]),
+        "reason": (
+            f"Latency {latency_ms}ms exceeds the {control_state['latency_threshold']}ms fallback threshold"
+            if fallback_active
+            else f"Primary route remains inside the {control_state['latency_threshold']}ms fallback threshold"
+        ),
+    }
+    sunburst = _sunburst_payload(event, regions, metrics, routing_state, trace, control_state)
+
     return {
         "metrics": metrics,
         "trace": trace,
         "ticker_trace": ticker_trace,
         "controls": control_state,
-        "routing": {
-            "route": routing,
-            "fallback_active": fallback_active,
-            "latency_ms": latency_ms,
-            "threshold_ms": int(control_state["latency_threshold"]),
-            "reason": (
-                f"Latency {latency_ms}ms exceeds the {control_state['latency_threshold']}ms fallback threshold"
-                if fallback_active
-                else f"Primary route remains inside the {control_state['latency_threshold']}ms fallback threshold"
-            ),
-        },
+        "routing": routing_state,
+        "sunburst": sunburst,
         "projection": {
             "base_exposure": base_exposure,
             "p50": percentile(50),
