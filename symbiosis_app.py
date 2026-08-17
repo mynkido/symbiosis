@@ -1,4 +1,4 @@
-"""Symbiosis by Mynki See.
+"""Symbiosis by Mynki AI.
 
 A mobile-first decision cockpit for consequential institutional events.
 
@@ -10,10 +10,12 @@ and outcomes are synthetic.
 
 from __future__ import annotations
 
+from base64 import b64encode
 from datetime import datetime
 import html
 import importlib
 import json
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -42,7 +44,7 @@ import symbiosis_theme
 
 
 st.set_page_config(
-    page_title="Symbiosis · Mynki See",
+    page_title="Symbiosis · Mynki AI",
     page_icon="✦",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -54,6 +56,15 @@ def esc(value: Any) -> str:
     """Escape all synthetic content passed into small HTML rendering helpers."""
 
     return html.escape(str(value), quote=True)
+
+
+@st.cache_data(show_spinner=False)
+def mynki_logo_data_uri() -> str:
+    """Embed the supplied Mynki AI mark so it is reliable in deployment."""
+
+    logo_path = Path(__file__).parent / "assets" / "mynki-ai-logo.jpg"
+    encoded = b64encode(logo_path.read_bytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
 
 
 def private_value(value: str, private_mode: bool) -> str:
@@ -216,12 +227,12 @@ def render_live_clock(world_name: str) -> None:
 def render_brand(profile: dict[str, Any]) -> None:
     """Render the product identity and quiet disclosure."""
 
+    logo = mynki_logo_data_uri()
     st.markdown(
         f"""
 <div class="sym-brand">
-  <div class="sym-logo" aria-hidden="true">S</div>
+  <div class="sym-brand-mark" aria-hidden="true"><img src="{logo}" alt=""></div>
   <div>
-    <div class="sym-kicker">Mynki See</div>
     <h1 class="sym-title">Symbiosis</h1>
   </div>
 </div>
@@ -243,12 +254,12 @@ def render_brand(profile: dict[str, Any]) -> None:
 def render_glance_header(profile: dict[str, Any]) -> None:
     """Render only the live identity needed before a mobile decision."""
 
+    logo = mynki_logo_data_uri()
     st.markdown(
         f"""
 <div class="sym-compact-header">
-  <div class="sym-compact-mark" aria-hidden="true">S</div>
+  <div class="sym-compact-mark" aria-hidden="true"><img src="{logo}" alt=""></div>
   <div>
-    <div class="sym-kicker">Mynki See · live decision</div>
     <div class="sym-compact-title">Symbiosis <span>/{esc(profile["short_name"])}</span></div>
   </div>
 </div>
@@ -1562,12 +1573,12 @@ def render_analysis(
 def render_landing(profile: dict[str, Any]) -> None:
     """Offer a deliberately short entry that previews motion, not a product essay."""
 
+    logo = mynki_logo_data_uri()
     st.markdown("<div style='height:5vh'></div>", unsafe_allow_html=True)
     st.markdown(
         f"""
 <section class="sym-entry">
-  <div class="sym-entry-mark" aria-hidden="true"><span>S</span><i></i><i></i><i></i></div>
-  <div class="sym-kicker">Mynki See</div>
+  <div class="sym-entry-mark" aria-hidden="true"><img src="{logo}" alt=""></div>
   <h1>Symbiosis</h1>
   <p>The formal decision system—now a mobile-first cockpit.</p>
   <div class="sym-entry-signal"><span class="sym-dot green"></span> {esc(profile["short_name"])} ready · one decision waiting</div>
@@ -1582,6 +1593,16 @@ def render_landing(profile: dict[str, Any]) -> None:
         st.rerun()
     st.markdown(
         '<div class="sym-entry-note">Live operating simulation · Scenario data is synthetic</div>',
+        unsafe_allow_html=True,
+    )
+    render_site_footer()
+
+
+def render_site_footer() -> None:
+    """Keep the requested parent-brand link present without adding copy noise."""
+
+    st.markdown(
+        '<footer class="sym-site-footer"><a href="https://mynki.ai" target="_blank" rel="noopener noreferrer">mynki.ai</a></footer>',
         unsafe_allow_html=True,
     )
 
@@ -1689,6 +1710,7 @@ def run() -> None:
         render_decision_pulse(event, telemetry, st.session_state.sym_private_mode)
         render_glance_controls(event)
         render_glance_futures(event, st.session_state.sym_private_mode)
+        render_site_footer()
         return
 
     detail_action, detail_live = st.columns([1.1, .9], gap="small")
@@ -1726,6 +1748,7 @@ def run() -> None:
             """,
             unsafe_allow_html=True,
         )
+    render_site_footer()
 
 
 if __name__ == "__main__":

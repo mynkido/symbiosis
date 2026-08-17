@@ -150,17 +150,26 @@ div[data-testid="stMarkdownContainer"] a {
   margin: .2rem 0 .35rem;
 }
 
-.sym-logo {
+.sym-brand-mark {
   width: 34px;
   height: 34px;
   display: grid;
   place-items: center;
-  color: white;
-  font-size: 1rem;
-  font-weight: 850;
+  flex: 0 0 34px;
+  overflow: hidden;
   border-radius: 11px;
-  background: linear-gradient(135deg, #6e9bff, #786eff);
-  box-shadow: 0 8px 20px rgba(92, 141, 255, .28);
+  border: 1px solid rgba(32, 74, 120, .13);
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(47, 128, 237, .14);
+}
+
+.sym-brand-mark img,
+.sym-compact-mark img,
+.sym-entry-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .sym-title {
@@ -187,11 +196,10 @@ div[data-testid="stMarkdownContainer"] a {
   place-items: center;
   flex: 0 0 29px;
   border-radius: 9px;
-  color: white;
-  background: linear-gradient(145deg, #6d9cff, #716aff);
-  font-size: .86rem;
-  font-weight: 850;
-  box-shadow: 0 6px 18px rgba(92, 141, 255, .34);
+  overflow: hidden;
+  border: 1px solid rgba(32, 74, 120, .13);
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(47, 128, 237, .14);
 }
 
 .sym-compact-title {
@@ -467,15 +475,14 @@ div[data-testid="stMarkdownContainer"] a {
 .sym-detail-kicker { padding: .42rem 0; color: #a7b9cd; font-size: .66rem; font-weight: 750; letter-spacing: .075em; text-transform: uppercase; }
 
 .sym-entry { max-width: 590px; margin: 0 auto 1rem; padding: 1.1rem 1rem .25rem; text-align: center; }
-.sym-entry-mark { position: relative; display: grid; place-items: center; width: 70px; height: 70px; margin: 0 auto .88rem; border-radius: 50%; color: white; background: radial-gradient(circle at 36% 30%, #9fc1ff, #5c8dff 48%, #4638a2); box-shadow: 0 0 0 12px rgba(92, 141, 255, .07), 0 0 55px rgba(92, 141, 255, .35); font-size: 1.75rem; font-weight: 850; animation: sym-entry-pulse 2.8s ease-in-out infinite; }
-.sym-entry-mark i { position: absolute; border: 1px solid rgba(130, 170, 255, .34); border-radius: 50%; animation: sym-entry-ripple 2.8s ease-out infinite; }
-.sym-entry-mark i:nth-child(2) { inset: -15px; }
-.sym-entry-mark i:nth-child(3) { inset: -29px; animation-delay: .65s; }
-.sym-entry-mark i:nth-child(4) { inset: -45px; animation-delay: 1.3s; }
+.sym-entry-mark { position: relative; display: grid; place-items: center; width: 70px; height: 70px; margin: 0 auto .88rem; overflow: hidden; border: 1px solid rgba(32, 74, 120, .14); border-radius: 18px; background: #fff; box-shadow: 0 0 0 10px rgba(47, 128, 237, .055), 0 14px 35px rgba(47, 128, 237, .16); }
 .sym-entry h1 { margin: .26rem 0 .18rem; color: white !important; font-size: clamp(2.3rem, 7vw, 3.8rem); letter-spacing: -.075em; line-height: .98; }
 .sym-entry p { margin: 0; color: #c5d4e4; font-size: 1rem; font-weight: 600; }
 .sym-entry-signal { display: inline-flex; align-items: center; gap: .4rem; margin-top: 1.15rem; padding: .42rem .62rem; border: 1px solid rgba(156, 187, 220, .18); border-radius: 999px; color: #adc1d5; background: rgba(8, 22, 36, .5); font-size: .63rem; font-weight: 750; letter-spacing: .055em; text-transform: uppercase; }
 .sym-entry-note { margin-top: .65rem; color: #8095a9; font-size: .62rem; font-weight: 700; letter-spacing: .075em; text-align: center; text-transform: uppercase; }
+.sym-site-footer { margin: 1rem 0 .25rem; text-align: center; }
+.sym-site-footer a { color: #245f9d; font-size: .68rem; font-weight: 820; letter-spacing: .08em; text-decoration: none; text-transform: lowercase; }
+.sym-site-footer a:hover, .sym-site-footer a:focus-visible { color: #102a43; text-decoration: underline; }
 
 @keyframes sym-flow-shift { to { stroke-dashoffset: -126; } }
 @keyframes sym-orb-arrive { from { opacity: 0; transform: translate(-50%, -42%) scale(.78); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
@@ -1041,10 +1048,6 @@ div[data-testid="stAlert"] {
 .sym-title, .sym-event-name, .sym-section-title { color: #102a43 !important; }
 .sym-subtitle, .sym-event-context, .sym-section-note { color: #627d98; }
 
-.sym-logo, .sym-compact-mark {
-  background: linear-gradient(145deg, #2f80ed, #00c6f7);
-  box-shadow: 0 8px 20px rgba(47, 128, 237, .22);
-}
 .sym-compact-title { color: #153550; }
 .sym-compact-title span { color: #2f80ed; }
 
@@ -1232,8 +1235,6 @@ div[data-testid="stAlert"] {
 
 .sym-entry h1 { color: #102a43 !important; }
 .sym-entry p { color: #4e6b84; }
-.sym-entry-mark { background: radial-gradient(circle at 36% 30%, #a3f0ff, #00bfe8 48%, #2f80ed); box-shadow: 0 0 0 12px rgba(0,210,255,.075), 0 0 55px rgba(0,210,255,.2); }
-.sym-entry-mark i { border-color: rgba(0,210,255,.28); }
 .sym-entry-signal { border-color: rgba(47,128,237,.16); color: #54728a; background: rgba(255,255,255,.75); }
 .sym-entry-note { color: #6d879b; }
 
@@ -1284,9 +1285,13 @@ div[data-testid="stAlert"] { background: rgba(255,255,255,.88); border-color: rg
 
 @media (max-width: 640px) {
   .block-container { padding: .72rem .7rem 6.4rem; }
-  .sym-compact-header { display: none; }
+  /* Keep the parent mark present in the live mobile control surface without
+     spending the first screen on another wordmark. */
+  .sym-compact-header { display: flex; margin: 2.35rem 0 .34rem; }
+  .sym-compact-header > div:last-child { display: none; }
+  .sym-compact-mark { width: 31px; height: 31px; flex-basis: 31px; }
   .sym-brand { gap: .55rem; }
-  .sym-logo { width: 31px; height: 31px; }
+  .sym-brand-mark { width: 31px; height: 31px; flex-basis: 31px; }
   .sym-title { font-size: 1.47rem; }
   .sym-subtitle { font-size: .82rem; }
   .sym-live-scene { min-height: 205px; }
