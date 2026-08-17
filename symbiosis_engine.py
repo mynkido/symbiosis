@@ -155,11 +155,63 @@ def _display_value_to_dollars(value: str) -> float:
     return amount * multiplier
 
 
+SIMULATION_PRESETS: dict[str, dict[str, int | str]] = {
+    "balanced": {
+        "label": "Balanced",
+        "risk_bias": 0,
+        "friction_bias": 0,
+        "latency_threshold": 280,
+    },
+    "protect_capital": {
+        "label": "Protect capital",
+        "risk_bias": 12,
+        "friction_bias": 7,
+        "latency_threshold": 220,
+    },
+    "protect_continuity": {
+        "label": "Protect continuity",
+        "risk_bias": -7,
+        "friction_bias": -9,
+        "latency_threshold": 360,
+    },
+    "custom": {
+        "label": "Custom",
+        "risk_bias": 0,
+        "friction_bias": 0,
+        "latency_threshold": 280,
+    },
+}
+
+
+def simulation_controls(controls: dict[str, Any] | None = None) -> dict[str, int | str]:
+    """Normalize the deliberate operator controls used by the synthetic engine.
+
+    These controls are inputs to the shared simulation model, not cosmetic view
+    settings. Their effect is reflected in the signal stream, routing posture,
+    scenario projection, and any subsequent audit entry.
+    """
+
+    controls = controls or {}
+    preset = str(controls.get("preset", "balanced"))
+    if preset not in SIMULATION_PRESETS:
+        preset = "balanced"
+    defaults = SIMULATION_PRESETS[preset]
+    return {
+        "preset": preset,
+        "label": str(defaults["label"]),
+        "speed": max(1, min(5, int(controls.get("speed", 1)))),
+        "risk_bias": max(-20, min(20, int(controls.get("risk_bias", defaults["risk_bias"])))),
+        "friction_bias": max(-20, min(20, int(controls.get("friction_bias", defaults["friction_bias"])))),
+        "latency_threshold": max(160, min(520, int(controls.get("latency_threshold", defaults["latency_threshold"])))),
+    }
+
+
 def decision_telemetry(
     event: dict[str, Any],
     regions: list[dict[str, Any]],
     now: datetime | None = None,
     points: int = 48,
+    controls: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Derive one formal signal trace and scenario range from the event state.
 
@@ -170,6 +222,7 @@ def decision_telemetry(
     """
 
     now = now or utc_now()
+    control_state = simulation_controls(controls)
     evidence = event["evidence"]
     verified = sum(item["state"] == "verified" for item in evidence)
     conflicting = sum(item["state"] == "conflicting" for item in evidence)
@@ -177,10 +230,23 @@ def decision_telemetry(
     risk_base = {"low": 28, "moderate": 48, "elevated": 67, "critical": 86}.get(event["risk"].lower(), 50)
     operating_load = round(sum(int(region["network_load"]) for region in regions) / max(1, len(regions)))
 
-    trust = _bounded(int(event["confidence"]) + (verified * 3) - (conflicting * 4) - (missing * 6), 8, 96)
-    risk = _bounded(risk_base + (conflicting * 3) + (missing * 4) - (verified * 2), 8, 96)
-    friction = _bounded(20 + (conflicting * 11) + (missing * 17) + max(0, 70 - int(event["confidence"])) * .22, 8, 94)
+    risk_bias = int(control_state["risk_bias"])
+    friction_bias = int(control_state["friction_bias"])
+    trust = _bounded(
+        int(event["confidence"]) + (verified * 3) - (conflicting * 4) - (missing * 6)
+        - max(0, risk_bias) * .28 - max(0, friction_bias) * .16,
+        8,
+        96,
+    )
+    risk = _bounded(risk_base + (conflicting * 3) + (missing * 4) - (verified * 2) + risk_bias, 8, 96)
+    friction = _bounded(
+        20 + (conflicting * 11) + (missing * 17) + max(0, 70 - int(event["confidence"])) * .22 + friction_bias,
+        8,
+        94,
+    )
     latency_ms = int(86 + (friction * 1.7) + (risk * .85) + (operating_load * .35))
+    fallback_active = latency_ms > int(control_state["latency_threshold"])
+    routing = "fallback" if fallback_active else "primary"
 
     metrics = {
         "trust": trust,
@@ -191,13 +257,16 @@ def decision_telemetry(
         "verified": verified,
         "conflicting": conflicting,
         "missing": missing,
+        "routing": routing,
+        "fallback_active": fallback_active,
+        "latency_threshold": int(control_state["latency_threshold"]),
     }
 
     # The trace is stable for a decision, then makes a small deterministic
     # minute-level adjustment. That produces live-looking movement without
     # inventing a second, view-only source of truth.
     phase = deterministic_int(f"{event['id']}:phase", 0, 20) + now.minute
-    trace: list[dict[str, int]] = []
+    trace: list[dict[str, int | bool | str]] = []
     trace_points = max(16, points)
     for index in range(trace_points):
         progress = index / max(1, trace_points - 1)
@@ -212,12 +281,48 @@ def decision_telemetry(
         risk_point = _bounded(risk - (wave * .72) + risk_noise + ((1 - progress) * 3))
         friction_point = _bounded(friction + (wave * .55) + friction_noise)
         load_point = _bounded(operating_load + (wave * .85) + load_noise)
+        trace_latency = int(86 + (friction_point * 1.7) + (risk_point * .85) + (load_point * .35))
+        trace_fallback = trace_latency > int(control_state["latency_threshold"])
         trace.append(
             {
                 "trust": trust if index == trace_points - 1 else trust_point,
                 "risk": risk if index == trace_points - 1 else risk_point,
                 "friction": friction if index == trace_points - 1 else friction_point,
                 "load": operating_load if index == trace_points - 1 else load_point,
+                "latency_ms": latency_ms if index == trace_points - 1 else trace_latency,
+                "fallback": fallback_active if index == trace_points - 1 else trace_fallback,
+                "route": routing if index == trace_points - 1 else ("fallback" if trace_fallback else "primary"),
+            }
+        )
+
+    # A long, deterministic signal loop for the primary ticker canvas. It is
+    # intentionally precomputed here so the client only animates the movement;
+    # it never invents a second set of random metrics. The curves use periodic
+    # macro/micro components so the loop remains visually continuous when it
+    # reaches the next cycle.
+    ticker_trace: list[dict[str, int | bool]] = []
+    ticker_points = max(180, points * 5)
+    for index in range(ticker_points):
+        angle = (2 * math.pi * index) / ticker_points
+        macro = math.sin(angle * 3 + phase * .18) * 14 + math.sin(angle * 7 + phase * .09) * 5
+        micro = deterministic_int(f"{event['id']}:ticker:{index % 60}", -7, 7)
+        smaller_micro = deterministic_int(f"{event['id']}:ticker:minor:{index % 45}", -4, 4)
+        # The red/dark-blue/light-blue visual order gives the formal board an
+        # immediately legible hierarchy while all series still derive from the
+        # same risk, friction, trust, and load state.
+        red = _bounded(59 + macro + micro + (risk - 50) * .18 + max(0, risk_bias) * .18, 8, 96)
+        dark_blue = _bounded(red - 9 + smaller_micro - (friction - 45) * .035, 5, 92)
+        light_blue = _bounded(dark_blue - 7 + deterministic_int(f"{event['id']}:ticker:light:{index % 30}", -3, 3), 3, 88)
+        area = _bounded(operating_load + math.sin(angle * 4 + phase * .12) * 16 + micro * .7, 4, 95)
+        latency_spike = int(70 + (area * .85) + (red * 1.5) + max(0, micro) * 4 + max(0, friction_bias) * 2)
+        ticker_trace.append(
+            {
+                "risk": red,
+                "friction": dark_blue,
+                "trust": light_blue,
+                "load": area,
+                "latency_ms": latency_spike,
+                "fallback": latency_spike > int(control_state["latency_threshold"]),
             }
         )
 
@@ -225,11 +330,15 @@ def decision_telemetry(
     # original board-risk idea while making its dependencies explicit here.
     base_value = _display_value_to_dollars(str(event["value"]))
     base_exposure = base_value * ((risk / 100) * .19 + (friction / 100) * .11)
-    seed = int(hashlib.sha256(f"{event['id']}:projection".encode("utf-8")).hexdigest()[:16], 16)
+    projection_key = (
+        f"{event['id']}:projection:{risk_bias}:{friction_bias}:"
+        f"{control_state['latency_threshold']}"
+    )
+    seed = int(hashlib.sha256(projection_key.encode("utf-8")).hexdigest()[:16], 16)
     rng = random.Random(seed)
     samples: list[float] = []
     for _ in range(360):
-        multiplier = math.exp(rng.gauss(0.0, .42 + (risk / 700)))
+        multiplier = math.exp(rng.gauss(0.0, .42 + (risk / 700) + (friction / 1500)))
         shock = 1.0 + (max(0.0, rng.gauss(.14, .11)) if risk >= 62 else 0.0)
         samples.append(base_exposure * multiplier * shock)
     samples.sort()
@@ -249,6 +358,19 @@ def decision_telemetry(
     return {
         "metrics": metrics,
         "trace": trace,
+        "ticker_trace": ticker_trace,
+        "controls": control_state,
+        "routing": {
+            "route": routing,
+            "fallback_active": fallback_active,
+            "latency_ms": latency_ms,
+            "threshold_ms": int(control_state["latency_threshold"]),
+            "reason": (
+                f"Latency {latency_ms}ms exceeds the {control_state['latency_threshold']}ms fallback threshold"
+                if fallback_active
+                else f"Primary route remains inside the {control_state['latency_threshold']}ms fallback threshold"
+            ),
+        },
         "projection": {
             "base_exposure": base_exposure,
             "p50": percentile(50),
@@ -327,6 +449,7 @@ def audit_entry(
     action: str,
     authorizer: dict[str, str],
     now: datetime | None = None,
+    telemetry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create the canonical audit entry shown, exported, and replayed by the UI."""
 
@@ -334,7 +457,7 @@ def audit_entry(
     local = now.astimezone(ZoneInfo(authorizer["zone"]))
     outcome = outcome_for(event, action)
 
-    return {
+    record = {
         "id": f"audit-{event['id']}-{int(now.timestamp())}",
         "timestamp": local.isoformat(timespec="seconds"),
         "display_time": local.strftime("%H:%M:%S %Z"),
@@ -352,6 +475,27 @@ def audit_entry(
         "value": event["value"],
         "outcome": outcome,
     }
+    if telemetry:
+        metrics = telemetry.get("metrics", {})
+        controls = telemetry.get("controls", {})
+        routing = telemetry.get("routing", {})
+        record["simulation_configuration"] = {
+            "preset": controls.get("preset"),
+            "label": controls.get("label"),
+            "speed": controls.get("speed"),
+            "risk_bias": controls.get("risk_bias"),
+            "friction_bias": controls.get("friction_bias"),
+            "latency_threshold": controls.get("latency_threshold"),
+        }
+        record["signal_snapshot"] = {
+            "trust": metrics.get("trust"),
+            "risk": metrics.get("risk"),
+            "friction": metrics.get("friction"),
+            "latency_ms": metrics.get("latency_ms"),
+            "route": routing.get("route"),
+            "route_reason": routing.get("reason"),
+        }
+    return record
 
 
 def public_snapshot(
@@ -359,6 +503,7 @@ def public_snapshot(
     event_index: int,
     audit_log: list[dict[str, Any]],
     now: datetime | None = None,
+    controls: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return the complete synthetic world snapshot used for a JSON export."""
 
@@ -374,5 +519,6 @@ def public_snapshot(
         },
         "event": scenario_for(world_id, event_index),
         "regional_state": regional_state(world_id, now),
+        "simulation_configuration": simulation_controls(controls),
         "decision_record": audit_log,
     }
