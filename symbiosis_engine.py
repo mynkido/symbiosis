@@ -576,31 +576,33 @@ def decision_telemetry(
             }
         )
 
-    # A long, deterministic signal loop for the primary ticker canvas. It is
-    # intentionally precomputed here so the client only animates the movement;
-    # it never invents a second set of random metrics. The curves use periodic
-    # macro/micro components so the loop remains visually continuous when it
-    # reaches the next cycle.
+    # A long, deterministic signal loop for the formal ticker canvas. The
+    # measures are deliberately independent: risk, friction, and trust can
+    # converge and cross just as competing operating signals do in a real
+    # control room. The browser only moves these precomputed values; it never
+    # invents another random signal stream.
     ticker_trace: list[dict[str, int | bool]] = []
     ticker_points = max(180, points * 5)
     for index in range(ticker_points):
         angle = (2 * math.pi * index) / ticker_points
-        macro = math.sin(angle * 3 + phase * .18) * 14 + math.sin(angle * 7 + phase * .09) * 5
-        micro = deterministic_int(f"{event['id']}:ticker:{index % 60}", -7, 7)
-        smaller_micro = deterministic_int(f"{event['id']}:ticker:minor:{index % 45}", -4, 4)
-        # The red/dark-blue/light-blue visual order gives the formal board an
-        # immediately legible hierarchy while all series still derive from the
-        # same risk, friction, trust, and load state.
-        red = _bounded(59 + macro + micro + (risk - 50) * .18 + max(0, risk_bias) * .18, 8, 96)
-        dark_blue = _bounded(red - 9 + smaller_micro - (friction - 45) * .035, 5, 92)
-        light_blue = _bounded(dark_blue - 7 + deterministic_int(f"{event['id']}:ticker:light:{index % 30}", -3, 3), 3, 88)
-        area = _bounded(operating_load + math.sin(angle * 4 + phase * .12) * 16 + micro * .7, 4, 95)
-        latency_spike = int(70 + (area * .85) + (red * 1.5) + max(0, micro) * 4 + max(0, friction_bias) * 2)
+        risk_wave = math.sin(angle * 3.1 + phase * .18 + 1.45) * 15 + math.sin(angle * 7.4 + phase * .09) * 5
+        friction_wave = math.sin(angle * 4.3 + phase * .13 + 3.9) * 13 + math.cos(angle * 8.2 + phase * .06) * 4
+        trust_wave = math.sin(angle * 2.7 + phase * .16 - 1.1) * 15 + math.cos(angle * 6.1 + phase * .08) * 5
+        risk_noise = deterministic_int(f"{event['id']}:ticker:risk:{index % 60}", -5, 5)
+        friction_noise = deterministic_int(f"{event['id']}:ticker:friction:{index % 45}", -5, 5)
+        trust_noise = deterministic_int(f"{event['id']}:ticker:trust:{index % 30}", -5, 5)
+        risk_signal = _bounded(risk + risk_wave + risk_noise + max(0, risk_bias) * .16, 8, 96)
+        friction_signal = _bounded(friction + friction_wave + friction_noise + max(0, friction_bias) * .18, 5, 94)
+        trust_signal = _bounded(trust + trust_wave + trust_noise - max(0, risk_bias) * .13, 5, 96)
+        area = _bounded(operating_load + math.sin(angle * 4 + phase * .12) * 16 + risk_noise * .7, 4, 95)
+        latency_spike = int(
+            70 + (area * .85) + (risk_signal * 1.08) + (friction_signal * .92) + max(0, friction_noise) * 3
+        )
         ticker_trace.append(
             {
-                "risk": red,
-                "friction": dark_blue,
-                "trust": light_blue,
+                "risk": risk_signal,
+                "friction": friction_signal,
+                "trust": trust_signal,
                 "load": area,
                 "latency_ms": latency_spike,
                 "fallback": latency_spike > int(control_state["latency_threshold"]),

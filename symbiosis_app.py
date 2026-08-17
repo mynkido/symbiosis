@@ -1418,12 +1418,59 @@ def _formal_load_area(trace: list[dict[str, int]]) -> str:
     return f"{_formal_chart_path(trace, 'load')} L692,232 L28,232 Z"
 
 
+def _formal_signal_clashes(trace: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Find genuine order changes between the formal operating measures.
+
+    A crossover means the relative order of two independent signals changed.
+    It is an attention marker—not a causal claim or an automated action.
+    """
+
+    pairs = (
+        ("trust", "risk", "Trust", "Risk"),
+        ("trust", "friction", "Trust", "Friction"),
+        ("risk", "friction", "Risk", "Friction"),
+    )
+    clashes: list[dict[str, Any]] = []
+    for index in range(1, len(trace)):
+        previous = trace[index - 1]
+        current = trace[index]
+        for first_key, second_key, first_label, second_label in pairs:
+            previous_delta = int(previous[first_key]) - int(previous[second_key])
+            current_delta = int(current[first_key]) - int(current[second_key])
+            if previous_delta * current_delta > 0 or (previous_delta == 0 and current_delta == 0):
+                continue
+            denominator = abs(previous_delta) + abs(current_delta)
+            progress = abs(previous_delta) / denominator if denominator else .5
+            value = int(previous[first_key]) + progress * (int(current[first_key]) - int(previous[first_key]))
+            x, y = _formal_chart_point(value, index - 1 + progress, len(trace))
+            leader = first_label if int(current[first_key]) >= int(current[second_key]) else second_label
+            follower = second_label if leader == first_label else first_label
+            clashes.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "label": f"{leader} moved above {follower}",
+                }
+            )
+    return clashes[-5:]
+
+
 def render_formal_signal_board(event: dict[str, Any], telemetry: dict[str, Any]) -> None:
     """Restore the original formal signal-board language for decision review."""
 
     trace = telemetry["trace"]
     metrics = telemetry["metrics"]
     latest = trace[-1]
+    clashes = _formal_signal_clashes(trace)
+    clash_marks = "".join(
+        f'<g class="sym-formal-clash"><line x1="{clash["x"]:.1f}" x2="{clash["x"]:.1f}" y1="32" y2="220" class="sym-formal-clash-line"/><circle cx="{clash["x"]:.1f}" cy="{clash["y"]:.1f}" r="4.1" class="sym-formal-clash-dot"><title>{esc(clash["label"])}</title></circle></g>'
+        for clash in clashes
+    )
+    clash_note = (
+        f'<div class="sym-formal-clash-note"><i></i> Signal clash · {esc(clashes[-1]["label"])}</div>'
+        if clashes
+        else '<div class="sym-formal-clash-note quiet"><i></i> No crossover in the retained trace</div>'
+    )
     grid_lines = "".join(
         f'<line x1="28" x2="692" y1="{y}" y2="{y}" class="sym-formal-grid-line"/>' for y in (44, 88, 132, 176, 220)
     )
@@ -1434,7 +1481,7 @@ def render_formal_signal_board(event: dict[str, Any], telemetry: dict[str, Any])
     <div>
       <div class="sym-formal-overline">Formal Symbiosis board · evolved</div>
       <h3>Live Signals (Ticker View)</h3>
-      <p>Trust / Risk / Friction drift in real time. Latency spikes trigger fallback routing.</p>
+      <p>Independent Trust / Risk / Friction signals can converge and cross. Latency spikes trigger fallback routing.</p>
     </div>
     <div class="sym-formal-now"><span class="sym-dot {'red' if telemetry['routing']['fallback_active'] else 'green'}"></span> {esc(telemetry['routing']['route'])} · {esc(telemetry["time_basis"])}</div>
   </div>
@@ -1444,6 +1491,7 @@ def render_formal_signal_board(event: dict[str, Any], telemetry: dict[str, Any])
     <div class="friction"><span>Friction</span><b>{metrics["friction"]}</b><i></i></div>
     <div class="latency"><span>Latency</span><b>{metrics["latency_ms"]}ms</b><i></i></div>
   </div>
+  {clash_note}
   <div class="sym-formal-chart-wrap">
     <svg class="sym-formal-chart" viewBox="0 0 720 250" preserveAspectRatio="none" role="img" aria-label="Synthetic trust risk and friction signal trace">
       <defs><linearGradient id="sym-formal-load" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#48b8e8" stop-opacity=".33"/><stop offset="100%" stop-color="#48b8e8" stop-opacity="0"/></linearGradient></defs>
@@ -1453,6 +1501,7 @@ def render_formal_signal_board(event: dict[str, Any], telemetry: dict[str, Any])
       <path d="{_formal_chart_path(trace, 'trust')}" class="sym-formal-line trust"/>
       <path d="{_formal_chart_path(trace, 'risk')}" class="sym-formal-line risk"/>
       <path d="{_formal_chart_path(trace, 'friction')}" class="sym-formal-line friction"/>
+      {clash_marks}
       <circle cx="{_formal_chart_point(latest['trust'], len(trace) - 1, len(trace))[0]:.1f}" cy="{_formal_chart_point(latest['trust'], len(trace) - 1, len(trace))[1]:.1f}" r="4" class="sym-formal-dot trust"/>
       <circle cx="{_formal_chart_point(latest['risk'], len(trace) - 1, len(trace))[0]:.1f}" cy="{_formal_chart_point(latest['risk'], len(trace) - 1, len(trace))[1]:.1f}" r="4" class="sym-formal-dot risk"/>
       <circle cx="{_formal_chart_point(latest['friction'], len(trace) - 1, len(trace))[0]:.1f}" cy="{_formal_chart_point(latest['friction'], len(trace) - 1, len(trace))[1]:.1f}" r="4" class="sym-formal-dot friction"/>
